@@ -8,33 +8,52 @@
     text-rendering: optimizeLegibility;
   }
   body {
-    @apply bg-sand-50 font-sans antialiased;
+    background-color: #faf9f6;
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
     color: #24221e;
   }
-  /* Tabular numerals for all data values */
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
-  /* Visible focus states for keyboard navigation */
   *:focus-visible {
-    @apply outline-none ring-2 ring-forest-500 ring-offset-2 ring-offset-sand-50 rounded-md;
+    outline: none;
+    box-shadow: 0 0 0 2px #3c7349, 0 0 0 4px #faf9f6;
+    border-radius: 0.375rem;
   }
 }
 
 @layer components {
   .card {
-    @apply rounded-xl bg-white border border-charcoal-100 shadow-card;
+    border-radius: 0.75rem;
+    background-color: #ffffff;
+    border: 1px solid #e9e7e3;
+    box-shadow: 0 1px 2px rgba(26, 24, 21, 0.04), 0 1px 3px rgba(26, 24, 21, 0.03);
   }
   .card-hover {
-    @apply transition-shadow duration-200 hover:shadow-card-hover;
+    transition: box-shadow 0.2s;
+  }
+  .card-hover:hover {
+    box-shadow: 0 2px 6px rgba(26, 24, 21, 0.06), 0 4px 16px -8px rgba(26, 24, 21, 0.08);
   }
   .pill {
-    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 9999px;
+    padding: 0.125rem 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 500;
   }
   .section-title {
-    @apply font-display text-lg font-semibold text-charcoal-900;
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #1a1815;
   }
   .meta-label {
-    @apply text-xs font-medium text-charcoal-400;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #847d72;
   }
 }
