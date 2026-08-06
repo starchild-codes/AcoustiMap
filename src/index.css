@@ -8,15 +8,32 @@
     text-rendering: optimizeLegibility;
   }
   body {
-    @apply bg-sand-50 text-forest-900 font-sans antialiased;
+    @apply bg-sand-50 text-charcoal-800 font-sans antialiased;
+  }
+  /* Tabular numerals for all data values */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Visible focus states for keyboard navigation */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-forest-500 ring-offset-2 ring-offset-sand-50 rounded-md;
   }
 }
 
 @layer components {
   .card {
-    @apply rounded-2xl bg-white border border-forest-100/70 shadow-card;
+    @apply rounded-xl bg-white border border-charcoal-100 shadow-card;
+  }
+  .card-hover {
+    @apply transition-shadow duration-200 hover:shadow-card-hover;
   }
   .pill {
     @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .section-title {
+    @apply font-display text-lg font-semibold text-charcoal-900;
+  }
+  .meta-label {
+    @apply text-xs font-medium text-charcoal-400;
   }
 }
