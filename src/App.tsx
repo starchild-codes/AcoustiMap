@@ -2,7 +2,9 @@ import { useState } from 'react'
 import Sidebar, { type PageId } from './components/Sidebar'
 import TopNav from './components/TopNav'
 import OverviewPage from './pages/OverviewPage'
+import SoundscapePage from './pages/SoundscapePage'
 import PlaceholderPage from './components/PlaceholderPage'
+import { SoundscapeProvider } from './soundscape/SoundscapeContext'
 import { MapPin } from 'lucide-react'
 
 const pageTitles: Record<PageId, string> = {
@@ -57,6 +59,10 @@ export default function App() {
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 sm:py-8 max-w-[1400px] w-full mx-auto">
           {active === 'overview' ? (
             <OverviewPage onNavigate={navigate} />
+          ) : active === 'soundscape' ? (
+            <SoundscapeProvider>
+              <SoundscapePage />
+            </SoundscapeProvider>
           ) : (
             <PlaceholderPage title={pageTitles[active]} />
           )}
