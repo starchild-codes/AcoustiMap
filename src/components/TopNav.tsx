@@ -113,6 +113,3 @@ export default function TopNav({ onMenuClick }: TopNavProps) {
     </header>
   )
 }
-
-
-export default TopNav

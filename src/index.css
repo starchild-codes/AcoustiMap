@@ -8,7 +8,8 @@
     text-rendering: optimizeLegibility;
   }
   body {
-    @apply bg-sand-50 text-charcoal-800 font-sans antialiased;
+    @apply bg-sand-50 font-sans antialiased;
+    color: #24221e;
   }
   /* Tabular numerals for all data values */
   .tabular-nums {
