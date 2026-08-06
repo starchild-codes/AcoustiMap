@@ -3,6 +3,7 @@ import Sidebar, { type PageId } from './components/Sidebar'
 import TopNav from './components/TopNav'
 import OverviewPage from './pages/OverviewPage'
 import SoundscapePage from './pages/SoundscapePage'
+import ProjectsPage from './pages/ProjectsPage'
 import PlaceholderPage from './components/PlaceholderPage'
 import { SoundscapeProvider } from './soundscape/SoundscapeContext'
 import { MapPin } from 'lucide-react'
@@ -63,6 +64,8 @@ export default function App() {
             <SoundscapeProvider>
               <SoundscapePage />
             </SoundscapeProvider>
+          ) : active === 'projects' ? (
+            <ProjectsPage onNavigate={navigate} />
           ) : (
             <PlaceholderPage title={pageTitles[active]} />
           )}
