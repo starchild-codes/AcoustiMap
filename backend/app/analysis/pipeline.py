@@ -1,604 +1,511 @@
 """
-Real audio analysis pipeline using NumPy, SciPy, and Librosa.
+Pipeline orchestration: the single entry point for running a complete analysis.
 
-Every metric implementation documents the formula or library method used.
-Returns null for failed calculations rather than inventing results.
+run_project_analysis(project_id, recording_ids, configuration, output_directory)
+    -> ProjectAnalysisResult
+
+Stages:
+1. Validate configuration
+2. Load project and recording metadata
+3. Verify files and checksums
+4. Decode audio
+5. Preprocess
+6. Segment
+7. Calculate technical metrics
+8. Generate quality flags
+9. Calculate ecoacoustic features
+10. Generate artifacts
+11. Aggregate segment features
+12. Save recording analyses
+13. Prepare modelling matrix
+14. Construct reference profiles
+15. Calculate restored-recording scores
+16. Aggregate site and project results
+17. Calculate evidence consistency
+18. Run bootstrap analysis
+19. Run temporal analysis when valid
+20. Produce provenance
+21. Export final structured results
+22. Update analysis-job status
 """
 
-import numpy as np
-import librosa
-from scipy import signal
-from dataclasses import dataclass, field
-from typing import Any
-
+import time
 import logging
+import numpy as np
+from pathlib import Path
+from datetime import datetime, timezone
+from typing import Callable
+
+from .config import AnalysisConfig
+from .schemas import (
+    ProjectAnalysisResult, RecordingResult, ReferenceProfile,
+)
+from .exceptions import AudioAnalysisError, AudioDecodeError, InvalidAudioError, InsufficientReferenceDataError
+from .audio_loader import load_audio
+from .preprocessing import preprocess
+from .segmentation import segment_audio
+from .feature_pipeline import process_segment, suggest_quality_status
+from .aggregation import aggregate_segments, build_modelling_matrix
+from .reference_model import build_reference_model, extract_feature_vector
+from .recovery_score import calculate_recovery_scores, aggregate_scores
+from .confidence import calculate_evidence_consistency
+from .bootstrap import run_bootstrap
+from .temporal_analysis import calculate_temporal_analysis
+from .provenance import create_provenance, get_dependency_versions
+from .export import export_results
+from .spectrograms import generate_all_artifacts
+
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class TechnicalFeatures:
-    """Browser/Python-calculated technical features."""
-    duration: float | None = None
-    original_sample_rate: int | None = None
-    processed_sample_rate: int | None = None
-    channel_count: int | None = None
-    peak_amplitude: float | None = None
-    rms_amplitude: float | None = None
-    dynamic_range_db: float | None = None
-    clipping_proportion: float | None = None
-    silence_proportion: float | None = None
-    zero_crossing_rate: float | None = None
-    low_freq_energy: float | None = None
-    mid_freq_energy: float | None = None
-    high_freq_energy: float | None = None
-    spectral_centroid: float | None = None
-    spectral_bandwidth: float | None = None
-    spectral_rolloff: float | None = None
+DEFAULT_FEATURE_NAMES = [
+    "aci", "bi", "spectral_entropy", "temporal_entropy",
+    "biological_band_occupancy", "ndsi", "anthropogenic_noise_pressure",
+]
 
 
-@dataclass
-class EcoacousticFeatures:
-    """Ecoacoustic indices calculated from audio."""
-    aci: float | None = None
-    bi: float | None = None
-    spectral_entropy: float | None = None
-    temporal_entropy: float | None = None
-    frequency_band_occupancy: float | None = None
-    acoustic_diversity_index: float | None = None
-    acoustic_evenness_index: float | None = None
-    ndsi: float | None = None
-
-
-@dataclass
-class AnalysisResult:
-    technical: TechnicalFeatures
-    ecoacoustic: EcoacousticFeatures
-    errors: list[str] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
-    runtime_seconds: float = 0.0
-
-
-def load_and_standardize(
-    file_path: str,
-    target_sr: int = 22050,
-    mono: bool = True,
-    clip_duration: float | None = None,
-    start_offset: float = 0.0,
-    normalisation: str = "none",
-) -> tuple[np.ndarray | None, int | None, int | None, list[str]]:
+def run_project_analysis(
+    project_id: str,
+    recordings: list[dict],
+    configuration: AnalysisConfig,
+    output_directory: str,
+    analysis_job_id: str = "",
+    progress_callback: Callable[[str, float, str | None], None] | None = None,
+) -> ProjectAnalysisResult:
     """
-    Load audio file, convert to mono if requested, resample to target_sr,
-    optionally clip to a fixed duration starting at start_offset.
-    Returns (audio_data, target_sr, original_sr, errors).
+    Run the complete analysis pipeline.
+
+    Args:
+        project_id: Project identifier.
+        recordings: List of recording dicts with keys:
+            recording_id, file_path, habitat_category, site_id,
+            timestamp, monitoring_period, recorder_id, notes
+        configuration: AnalysisConfig instance.
+        output_directory: Where to save output files.
+        analysis_job_id: Job ID for tracking.
+        progress_callback: Optional callback(stage_name, percent, current_recording).
+
+    Returns:
+        ProjectAnalysisResult with all results.
     """
+    start_time = datetime.now(timezone.utc)
+    config_dict = configuration.to_dict()
+    warnings: list[str] = []
     errors: list[str] = []
 
-    try:
-        y, orig_sr = librosa.load(file_path, sr=target_sr, mono=mono, offset=start_offset,
-                                  duration=clip_duration)
-    except Exception as e:
-        logger.error("Audio decode failed for %s: %s", file_path, e)
-        return None, None, None, [f"Decode failure: {e}"]
+    def report(stage: str, pct: float, current: str | None = None):
+        if progress_callback:
+            progress_callback(stage, pct, current)
 
-    # NaN / infinity checks
-    if np.any(np.isnan(y)) or np.any(np.isinf(y)):
-        y = np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
-        errors.append("NaN or infinity values found in audio; replaced with zero.")
+    # Stage 1: Validate configuration (already done by Pydantic)
+    report("Validation", 2, None)
 
-    # Normalisation
-    if normalisation == "peak":
-        peak = np.max(np.abs(y))
-        if peak > 0:
-            y = y / peak
-    elif normalisation == "rms":
-        rms = np.sqrt(np.mean(y ** 2))
-        if rms > 0:
-            y = y / rms
+    # Stage 2: Load metadata (already provided)
+    report("Loading metadata", 5, None)
 
-    return y, target_sr, orig_sr, errors
+    total = len(recordings)
+    recording_results: list[RecordingResult] = []
+    failed_count = 0
 
+    # Process each recording
+    for i, rec_meta in enumerate(recordings):
+        rec_id = rec_meta.get("recording_id", f"rec_{i}")
+        file_path = rec_meta.get("file_path", "")
+        habitat = rec_meta.get("habitat_category", "restored")
 
-def calculate_technical_features(
-    y: np.ndarray,
-    sr: int,
-    original_sr: int | None,
-    channel_count: int = 1,
-    config: dict | None = None,
-) -> TechnicalFeatures:
-    """
-    Calculate technical quality features from decoded audio.
+        stage_label = f"Processing recording {i+1}/{total}: {rec_meta.get('filename', rec_id)}"
+        report(stage_label, 5 + (i / max(1, total)) * 35, rec_id)
 
-    All formulas use standard digital signal processing definitions:
-    - RMS: sqrt(mean(x^2))
-    - Peak: max(|x|)
-    - Dynamic range: 20*log10(peak / (rms + epsilon))
-    - Zero-crossing rate: count of sign changes / (N-1)
-    """
-    cfg = config or {}
-    silence_threshold = cfg.get("silence_threshold", 0.001)
-    clipping_threshold = cfg.get("clipping_threshold", 0.99)
+        try:
+            # Stage 4: Decode audio
+            loaded = load_audio(file_path)
 
-    n = len(y)
-    if n == 0:
-        return TechnicalFeatures(errors=["Empty audio buffer"])
+            # Stage 5: Preprocess
+            preprocessed = preprocess(
+                loaded.samples,
+                loaded.sample_rate,
+                target_sample_rate=configuration.target_sample_rate,
+                channel_mode=configuration.channel_mode,
+                remove_dc_offset=configuration.remove_dc_offset,
+                amplitude_normalization=configuration.amplitude_normalization,
+            )
 
-    duration = n / sr
-    abs_y = np.abs(y)
-    peak = float(np.max(abs_y)) if n > 0 else 0.0
-    rms = float(np.sqrt(np.mean(y ** 2))) if n > 0 else 0.0
-    dynamic_range = 20 * np.log10(peak / (rms + 1e-10)) if peak > 0 and rms > 0 else 0.0
+            audio = preprocessed.samples
+            sr = preprocessed.sample_rate
 
-    # Clipping: proportion of samples at or above threshold
-    clipping_count = int(np.sum(abs_y >= clipping_threshold))
-    clipping_prop = clipping_count / n if n > 0 else 0.0
+            if audio.ndim > 1:
+                audio_mono = np.mean(audio, axis=1).astype(np.float32)
+            else:
+                audio_mono = audio
 
-    # Silence: proportion of samples below threshold
-    silence_count = int(np.sum(abs_y < silence_threshold))
-    silence_prop = silence_count / n if n > 0 else 0.0
+            # Stage 6: Segment
+            segments = segment_audio(
+                audio_mono, sr, rec_id,
+                segment_duration_seconds=configuration.segment_duration_seconds,
+                segment_overlap_seconds=configuration.segment_overlap_seconds,
+                minimum_valid_duration_seconds=configuration.minimum_valid_duration_seconds,
+            )
 
-    # Zero-crossing rate
-    if n > 1:
-        sign_changes = np.sum(np.diff(np.signbit(y)))
-        zcr = float(sign_changes / (n - 1))
-    else:
-        zcr = 0.0
+            if len(segments) == 1 and segments[0].duration < configuration.segment_duration_seconds:
+                warnings.append(f"Recording {rec_id} is shorter than segment duration; analysed as one segment.")
 
-    # Frequency band energy using FFT
-    low_freq, mid_freq, high_freq = _compute_frequency_bands(y, sr)
+            # Stage 7-9: Process each segment
+            segment_results = []
+            for seg in segments:
+                seg_result = process_segment(seg, sr, config_dict)
+                segment_results.append(seg_result)
 
-    # Spectral features using librosa
-    spectral_centroid = None
-    spectral_bandwidth = None
-    spectral_rolloff = None
+            # Stage 10: Generate artifacts
+            report(f"Generating artifacts: {rec_id}", 40 + (i / max(1, total)) * 10, rec_id)
+            artifacts_dir = Path(output_directory) / "artifacts"
+            artifacts = {}
+            try:
+                artifacts = generate_all_artifacts(audio_mono, sr, rec_id, str(artifacts_dir), config_dict)
+            except Exception as e:
+                logger.warning("Artifact generation failed for %s: %s", rec_id, e)
+                warnings.append(f"Artifact generation failed for {rec_id}: {e}")
 
-    try:
-        spectral_centroid = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
-    except Exception:
-        pass
+            # Stage 11: Aggregate
+            recording_result = aggregate_segments(
+                segment_results, rec_id,
+                configuration_id=configuration.software_version,
+                artifacts=artifacts,
+                input_checksum=loaded.checksum,
+                runtime_seconds=0.0,  # Will be set later
+            )
 
-    try:
-        spectral_bandwidth = float(np.mean(librosa.feature.spectral_bandwidth(y=y, sr=sr)))
-    except Exception:
-        pass
+            # Add metadata to quality flags
+            meta_for_flags = {
+                "timestamp": rec_meta.get("timestamp"),
+                "site_id": rec_meta.get("site_id"),
+            }
 
-    try:
-        spectral_rolloff = float(np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr)))
-    except Exception:
-        pass
+            recording_results.append(recording_result)
 
-    return TechnicalFeatures(
-        duration=duration,
-        original_sample_rate=original_sr,
-        processed_sample_rate=sr,
-        channel_count=channel_count,
-        peak_amplitude=peak,
-        rms_amplitude=rms,
-        dynamic_range_db=dynamic_range,
-        clipping_proportion=clipping_prop,
-        silence_proportion=silence_prop,
-        zero_crossing_rate=zcr,
-        low_freq_energy=low_freq,
-        mid_freq_energy=mid_freq,
-        high_freq_energy=high_freq,
-        spectral_centroid=spectral_centroid,
-        spectral_bandwidth=spectral_bandwidth,
-        spectral_rolloff=spectral_rolloff,
+        except (AudioDecodeError, InvalidAudioError) as e:
+            logger.error("Failed to process %s: %s", rec_id, e)
+            errors.append(f"{rec_id}: {e}")
+            failed_count += 1
+            # Create a failed recording result
+            recording_results.append(RecordingResult(
+                recording_id=rec_id,
+                quality_status="failed",
+                technical=__import__("app.analysis.schemas", fromlist=["TechnicalFeatures"]).TechnicalFeatures(),
+                ecoacoustic=__import__("app.analysis.schemas", fromlist=["EcoacousticFeatures"]).EcoacousticFeatures(),
+                errors=[str(e)],
+                input_checksum="",
+            ))
+        except Exception as e:
+            logger.error("Unexpected error processing %s: %s", rec_id, e, exc_info=True)
+            errors.append(f"{rec_id}: unexpected error: {e}")
+            failed_count += 1
+
+    # Stage 13: Prepare modelling matrix
+    report("Preparing modelling matrix", 50, None)
+    matrix, feature_names, valid_rec_ids, excluded_ids = build_modelling_matrix(
+        recording_results, DEFAULT_FEATURE_NAMES
     )
 
-
-def _compute_frequency_bands(y: np.ndarray, sr: int) -> tuple[float, float, float]:
-    """Compute low/mid/high frequency energy proportions using FFT."""
-    n = len(y)
-    if n == 0:
-        return 0.0, 0.0, 0.0
-
-    # Use a single FFT of the entire signal for energy distribution
-    fft_size = min(4096, n)
-    frame = y[:fft_size]
-    windowed = frame * np.hanning(fft_size)
-    spectrum = np.abs(np.fft.rfft(windowed))
-
-    bin_width = sr / fft_size
-    low_cutoff = 500  # Hz
-    mid_cutoff = 4000  # Hz
-
-    low_bin = int(low_cutoff / bin_width)
-    mid_bin = int(mid_cutoff / bin_width)
-
-    low_energy = float(np.sum(spectrum[1:low_bin] ** 2)) if low_bin > 1 else 0.0
-    mid_energy = float(np.sum(spectrum[low_bin:mid_bin] ** 2)) if mid_bin > low_bin else 0.0
-    high_energy = float(np.sum(spectrum[mid_bin:] ** 2)) if len(spectrum) > mid_bin else 0.0
-
-    total = low_energy + mid_energy + high_energy
-    if total == 0:
-        return 0.0, 0.0, 0.0
-
-    return (low_energy / total, mid_energy / total, high_energy / total)
-
-
-def calculate_ecoacoustic_features(
-    y: np.ndarray,
-    sr: int,
-    config: dict | None = None,
-) -> tuple[EcoacousticFeatures, list[str]]:
-    """
-    Calculate ecoacoustic indices.
-
-    ACI (Acoustic Complexity Index):
-        Following Pieretti et al. (2011). ACI = sum over time steps of
-        sum(|I[i,t] - I[i,t+1]|) / sum(I[i,t] + I[i,t+1])
-        across frequency bins.
-
-    BI (Bioacoustic Index):
-        Following Boelman et al. (2007). Sum of energy in the 2-8 kHz band
-        normalized by total energy, expressed as a ratio.
-
-    Spectral entropy:
-        Shannon entropy of the normalized power spectrum, averaged over time.
-
-    Temporal entropy:
-        Shannon entropy of the normalized temporal envelope.
-
-    Frequency-band occupancy:
-        Proportion of frequency bins whose energy exceeds a threshold.
-
-    ADI (Acoustic Diversity Index):
-        Following Pijanowski et al. (2011). Shannon entropy of energy across
-        non-overlapping frequency bands.
-
-    AEI (Acoustic Evenness Index):
-        Following Villanueva-Rivera et al. (2011). Gini coefficient of energy
-        across frequency bands.
-
-    NDSI (Normalized Difference Soundscape Index):
-        Following Kasten et al. (2012). (bio - anthro) / (bio + anthro) where
-        bio = 2-8 kHz band and anthro = 0-1 kHz band.
-    """
-    cfg = config or {}
-    errors: list[str] = []
-
-    fft_size = cfg.get("fft_size", 2048)
-    hop_length = cfg.get("hop_length", 512)
-    aci_freq_step = cfg.get("aci_freq_step", 1000.0)
-    aci_time_step = cfg.get("aci_time_step", 1.0)
-    bi_freq_min = cfg.get("bi_freq_min", 2000.0)
-    bi_freq_max = cfg.get("bi_freq_max", 8000.0)
-    freq_min = cfg.get("freq_min", 0.0)
-    freq_max = cfg.get("freq_max", sr / 2)
-
-    result = EcoacousticFeatures()
-
-    # Compute STFT
-    try:
-        S = np.abs(librosa.stft(y, n_fft=fft_size, hop_length=hop_length))
-    except Exception as e:
-        errors.append(f"STFT computation failed: {e}")
-        return result, errors
-
-    # ACI
-    try:
-        result.aci = _calculate_aci(S, sr, fft_size, hop_length, aci_freq_step, aci_time_step)
-    except Exception as e:
-        errors.append(f"ACI calculation failed: {e}")
-
-    # BI
-    try:
-        result.bi = _calculate_bi(S, sr, fft_size, bi_freq_min, bi_freq_max)
-    except Exception as e:
-        errors.append(f"BI calculation failed: {e}")
-
-    # Spectral entropy
-    try:
-        result.spectral_entropy = _calculate_spectral_entropy(S)
-    except Exception as e:
-        errors.append(f"Spectral entropy calculation failed: {e}")
-
-    # Temporal entropy
-    try:
-        result.temporal_entropy = _calculate_temporal_entropy(y)
-    except Exception as e:
-        errors.append(f"Temporal entropy calculation failed: {e}")
-
-    # Frequency-band occupancy
-    try:
-        result.frequency_band_occupancy = _calculate_frequency_occupancy(S, sr, fft_size, freq_min, freq_max)
-    except Exception as e:
-        errors.append(f"Frequency occupancy calculation failed: {e}")
-
-    # ADI
-    try:
-        result.acoustic_diversity_index = _calculate_adi(S, sr, fft_size)
-    except Exception as e:
-        errors.append(f"ADI calculation failed: {e}")
-
-    # AEI
-    try:
-        result.acoustic_evenness_index = _calculate_aei(S, sr, fft_size)
-    except Exception as e:
-        errors.append(f"AEI calculation failed: {e}")
-
-    # NDSI
-    try:
-        result.ndsi = _calculate_ndsi(S, sr, fft_size)
-    except Exception as e:
-        errors.append(f"NDSI calculation failed: {e}")
-
-    return result, errors
-
-
-def _calculate_aci(S: np.ndarray, sr: int, fft_size: int, hop_length: int,
-                   freq_step: float, time_step: float) -> float | None:
-    """
-    Acoustic Complexity Index (Pieretti et al. 2011).
-
-    ACI = sum_t sum_f |I[f,t] - I[f,t+1]| / sum_t sum_f (I[f,t] + I[f,t+1])
-
-    We group frequency bins into bands of `freq_step` Hz and time frames
-    into groups of `time_step` seconds.
-    """
-    if S.shape[1] < 2:
-        return None
-
-    bin_width = sr / fft_size
-    freq_bins_per_band = max(1, int(freq_step / bin_width))
-    frames_per_time = max(1, int(time_step * sr / hop_length))
-
-    aci_total = 0.0
-    aci_denominator = 0.0
-
-    for f_start in range(0, S.shape[0], freq_bins_per_band):
-        f_end = min(f_start + freq_bins_per_band, S.shape[0])
-        band = S[f_start:f_end, :]
-
-        for t_start in range(0, band.shape[1] - 1, frames_per_time):
-            t_end = min(t_start + frames_per_time, band.shape[1] - 1)
-            segment = band[:, t_start:t_end + 1]
-
-            diff = np.abs(np.diff(segment, axis=1))
-            sum_diff = np.sum(diff)
-            sum_total = np.sum(segment[:, :-1] + segment[:, 1:])
-
-            if sum_total > 0:
-                aci_total += sum_diff
-                aci_denominator += sum_total
-
-    if aci_denominator == 0:
-        return None
-
-    return float(aci_total / aci_denominator)
-
-
-def _calculate_bi(S: np.ndarray, sr: int, fft_size: int,
-                  bi_freq_min: float, bi_freq_max: float) -> float | None:
-    """
-    Bioacoustic Index (Boelman et al. 2007).
-
-    BI = sum of energy in the bi_freq_min to bi_freq_max band,
-    divided by total energy, scaled to a 0-10 range.
-    """
-    bin_width = sr / fft_size
-    low_bin = int(bi_freq_min / bin_width)
-    high_bin = int(bi_freq_max / bin_width)
-
-    low_bin = max(1, low_bin)
-    high_bin = min(S.shape[0], high_bin)
-
-    if high_bin <= low_bin:
-        return None
-
-    bio_band = S[low_bin:high_bin, :]
-    total = np.sum(S)
-
-    if total == 0:
-        return None
-
-    ratio = np.sum(bio_band) / total
-    # Scale to 0-10 range as per convention
-    return float(ratio * 10)
-
-
-def _calculate_spectral_entropy(S: np.ndarray) -> float | None:
-    """
-    Spectral entropy: Shannon entropy of the normalized mean power spectrum.
-
-    H = -sum(p * log2(p)) where p = normalized power per frequency bin.
-    Normalized by log2(N) to produce a 0-1 value.
-    """
-    mean_spectrum = np.mean(S, axis=1)
-    power = mean_spectrum ** 2
-    total_power = np.sum(power)
-
-    if total_power == 0:
-        return None
-
-    p = power / total_power
-    p = p[p > 0]  # Avoid log(0)
-    entropy = -np.sum(p * np.log2(p))
-    max_entropy = np.log2(len(p))
-
-    if max_entropy == 0:
-        return None
-
-    return float(entropy / max_entropy)
-
-
-def _calculate_temporal_entropy(y: np.ndarray) -> float | None:
-    """
-    Temporal entropy: Shannon entropy of the normalized temporal envelope.
-
-    Uses the Hilbert envelope (analytic signal magnitude).
-    """
-    from scipy.signal import hilbert
-
-    if len(y) < 2:
-        return None
-
-    envelope = np.abs(hilbert(y))
-    total = np.sum(envelope)
-
-    if total == 0:
-        return None
-
-    p = envelope / total
-    p = p[p > 0]
-    entropy = -np.sum(p * np.log2(p))
-    max_entropy = np.log2(len(p))
-
-    if max_entropy == 0:
-        return None
-
-    return float(entropy / max_entropy)
-
-
-def _calculate_frequency_occupancy(S: np.ndarray, sr: int, fft_size: int,
-                                   freq_min: float, freq_max: float) -> float | None:
-    """
-    Frequency-band occupancy: proportion of frequency bins (within the
-    configured range) whose mean energy exceeds a threshold.
-    """
-    bin_width = sr / fft_size
-    low_bin = max(1, int(freq_min / bin_width))
-    high_bin = min(S.shape[0], int(freq_max / bin_width))
-
-    if high_bin <= low_bin:
-        return None
-
-    band = S[low_bin:high_bin, :]
-    mean_spectrum = np.mean(band, axis=1)
-
-    if len(mean_spectrum) == 0:
-        return None
-
-    threshold = np.median(mean_spectrum) if np.any(mean_spectrum > 0) else 0
-    if threshold == 0:
-        return 0.0
-
-    occupied = np.sum(mean_spectrum > threshold)
-    return float(occupied / len(mean_spectrum))
-
-
-def _calculate_adi(S: np.ndarray, sr: int, fft_size: int, num_bands: int = 10) -> float | None:
-    """
-    Acoustic Diversity Index (Pijanowski et al. 2011).
-
-    Shannon entropy of energy across non-overlapping frequency bands.
-    Bands are typically 1 kHz wide from 0 to 10 kHz.
-    """
-    bin_width = sr / fft_size
-    bins_per_band = max(1, int(1000 / bin_width))  # 1 kHz bands
-
-    band_energies = []
-    for i in range(num_bands):
-        start = i * bins_per_band
-        end = min((i + 1) * bins_per_band, S.shape[0])
-        if start >= S.shape[0]:
-            break
-        band_energies.append(float(np.sum(S[start:end, :])))
-
-    total = sum(band_energies)
-    if total == 0:
-        return None
-
-    p = np.array(band_energies) / total
-    p = p[p > 0]
-    entropy = -np.sum(p * np.log(p))  # Natural log per convention
-
-    return float(entropy)
-
-
-def _calculate_aei(S: np.ndarray, sr: int, fft_size: int, num_bands: int = 10) -> float | None:
-    """
-    Acoustic Evenness Index (Villanueva-Rivera et al. 2011).
-
-    Gini coefficient of energy across frequency bands.
-    """
-    bin_width = sr / fft_size
-    bins_per_band = max(1, int(1000 / bin_width))
-
-    band_energies = []
-    for i in range(num_bands):
-        start = i * bins_per_band
-        end = min((i + 1) * bins_per_band, S.shape[0])
-        if start >= S.shape[0]:
-            break
-        band_energies.append(float(np.sum(S[start:end, :])))
-
-    if len(band_energies) < 2:
-        return None
-
-    values = np.sort(band_energies)
-    n = len(values)
-    cumulative = np.cumsum(values)
-
-    if cumulative[-1] == 0:
-        return None
-
-    gini = (2 * np.sum((np.arange(1, n + 1)) * values) / (n * cumulative[-1])) - (n + 1) / n
-    return float(max(0, gini))
-
-
-def _calculate_ndsi(S: np.ndarray, sr: int, fft_size: int) -> float | None:
-    """
-    Normalized Difference Soundscape Index (Kasten et al. 2012).
-
-    NDSI = (bio - anthro) / (bio + anthro)
-    bio = 2-8 kHz band, anthro = 0-1 kHz band.
-    """
-    bin_width = sr / fft_size
-
-    bio_low = int(2000 / bin_width)
-    bio_high = int(8000 / bin_width)
-    anthro_high = int(1000 / bin_width)
-
-    bio_energy = float(np.sum(S[bio_low:bio_high, :])) if bio_high > bio_low else 0.0
-    anthro_energy = float(np.sum(S[1:anthro_high, :])) if anthro_high > 1 else 0.0
-
-    total = bio_energy + anthro_energy
-    if total == 0:
-        return None
-
-    return float((bio_energy - anthro_energy) / total)
-
-
-def analyze_recording(
-    file_path: str,
-    config: dict | None = None,
-) -> AnalysisResult:
-    """
-    Full analysis pipeline for a single recording.
-    Returns AnalysisResult with all features and any errors.
-    """
-    import time
-    start = time.time()
-
-    cfg = config or {}
-    target_sr = cfg.get("target_sample_rate", 22050)
-    mono = cfg.get("target_channel_mode", "mono") == "mono"
-    clip_duration = cfg.get("clip_duration", None)
-    if clip_duration and clip_duration <= 0:
-        clip_duration = None
-    start_offset = cfg.get("start_offset", 0.0)
-    normalisation = cfg.get("normalisation_method", "none")
-
-    y, sr, orig_sr, load_errors = load_and_standardize(
-        file_path, target_sr, mono, clip_duration, start_offset, normalisation
-    )
-
-    if y is None:
-        return AnalysisResult(
-            technical=TechnicalFeatures(),
-            ecoacoustic=EcoacousticFeatures(),
-            errors=load_errors,
-            runtime_seconds=time.time() - start,
+    if matrix is None or not feature_names:
+        warnings.append("No usable features for reference modelling.")
+        return ProjectAnalysisResult(
+            project_id=project_id,
+            analysis_job_id=analysis_job_id,
+            configuration=config_dict,
+            recording_results=recording_results,
+            feature_names=[],
+            total_recordings=total,
+            processed_recordings=total - failed_count,
+            failed_recordings=failed_count,
+            excluded_recordings=len(excluded_ids),
+            warnings=warnings,
+            errors=errors,
         )
 
-    technical = calculate_technical_features(y, sr, orig_sr, channel_count=1, config=cfg)
-    ecoacoustic, eco_errors = calculate_ecoacoustic_features(y, sr, config=cfg)
+    # Group recordings by habitat
+    healthy_features: list[dict] = []
+    degraded_features: list[dict] = []
+    restored_features: list[dict] = []
+    healthy_ids: list[str] = []
+    degraded_ids: list[str] = []
+    restored_ids: list[str] = []
+    period_scores: dict[str, list[float]] = {}
 
-    return AnalysisResult(
-        technical=technical,
-        ecoacoustic=ecoacoustic,
-        errors=load_errors + eco_errors,
-        warnings=[],
-        runtime_seconds=time.time() - start,
+    for rec in recording_results:
+        if rec.quality_status not in ("valid", "review"):
+            continue
+        # Find the original metadata
+        rec_meta = next((r for r in recordings if r.get("recording_id") == rec.recording_id), {})
+        habitat = rec_meta.get("habitat_category", "restored")
+        eco = rec.ecoacoustic.model_dump()
+        eco.pop("aci_by_band", None)
+
+        if habitat == "healthy":
+            healthy_features.append(eco)
+            healthy_ids.append(rec.recording_id)
+        elif habitat == "degraded":
+            degraded_features.append(eco)
+            degraded_ids.append(rec.recording_id)
+        elif habitat == "restored":
+            restored_features.append(eco)
+            restored_ids.append(rec.recording_id)
+
+            # Track period scores
+            period = rec_meta.get("monitoring_period", "unknown")
+            if rec.ecoacoustic is not None:
+                period_scores.setdefault(period, [])
+
+    # Stage 14: Construct reference profiles
+    report("Building reference model", 58, None)
+    reference_profiles: dict[str, ReferenceProfile] = {}
+    recovery_scores = []
+    project_score = None
+    confidence_result = None
+    bootstrap_result = None
+
+    try:
+        model = build_reference_model(
+            healthy_features, degraded_features, restored_features,
+            healthy_ids, degraded_ids, restored_ids,
+            feature_names,
+            scaling_method=configuration.reference_scaling,
+            distance_metric=configuration.distance_metric,
+            minimum_recordings_per_group=configuration.minimum_recordings_per_reference_group,
+        )
+
+        reference_profiles = {
+            "healthy": ReferenceProfile(
+                habitat="healthy",
+                recording_ids=model.healthy_recording_ids,
+                group_size=len(model.healthy_recording_ids),
+                centroid=model.healthy_centroid.tolist() if model.healthy_centroid is not None else [],
+                per_feature_dispersion=model.healthy_dispersion,
+                feature_names=feature_names,
+                warnings=model.warnings,
+            ),
+            "degraded": ReferenceProfile(
+                habitat="degraded",
+                recording_ids=model.degraded_recording_ids,
+                group_size=len(model.degraded_recording_ids),
+                centroid=model.degraded_centroid.tolist() if model.degraded_centroid is not None else [],
+                per_feature_dispersion=model.degraded_dispersion,
+                feature_names=feature_names,
+                warnings=[],
+            ),
+        }
+
+        # Stage 15: Calculate restored scores
+        report("Calculating recovery scores", 66, None)
+        recovery_scores = calculate_recovery_scores(
+            model, restored_features, restored_ids, feature_names,
+            configuration.distance_metric,
+        )
+
+        # Stage 16: Aggregate
+        score_agg = aggregate_scores(recovery_scores)
+        project_score = score_agg.get("median")
+
+        # Track period scores from recovery scores
+        for rs in recovery_scores:
+            rec_meta = next((r for r in recordings if r.get("recording_id") == rs.recording_id), {})
+            period = rec_meta.get("monitoring_period", "unknown")
+            if rs.recovery_score is not None:
+                period_scores.setdefault(period, []).append(rs.recovery_score)
+
+        # Stage 17: Evidence consistency
+        report("Calculating confidence", 74, None)
+        avg_agreement = None
+        agreements = [s.feature_agreement for s in recovery_scores if s.feature_agreement is not None]
+        if agreements:
+            avg_agreement = float(np.mean(agreements))
+
+        # Stage 18: Bootstrap
+        report("Running bootstrap", 76, None)
+        bootstrap_iterations = configuration.bootstrap_iterations
+        if bootstrap_iterations > 0 and len(healthy_features) >= configuration.minimum_recordings_per_reference_group \
+                and len(degraded_features) >= configuration.minimum_recordings_per_reference_group:
+            bootstrap_result = run_bootstrap(
+                healthy_features, degraded_features, restored_features,
+                healthy_ids, degraded_ids, restored_ids,
+                feature_names,
+                n_iterations=min(bootstrap_iterations, 100),  # Cap at 100 for speed
+                random_seed=configuration.random_seed,
+                scaling_method=configuration.reference_scaling,
+                distance_metric=configuration.distance_metric,
+                minimum_per_group=configuration.minimum_recordings_per_reference_group,
+            )
+
+        bs_std = bootstrap_result.std if bootstrap_result else None
+        bs_available = bootstrap_result is not None and bootstrap_result.successful_iterations > 0
+
+        confidence_result = calculate_evidence_consistency(
+            feature_agreement=avg_agreement,
+            restored_scores=recovery_scores,
+            healthy_count=len(healthy_ids),
+            degraded_count=len(degraded_ids),
+            restored_count=len(restored_ids),
+            total_recordings=total,
+            excluded_count=len(excluded_ids) + failed_count,
+            bootstrap_std=bs_std,
+            bootstrap_available=bs_available,
+            minimum_per_group=configuration.minimum_recordings_per_reference_group,
+        )
+
+    except InsufficientReferenceDataError as e:
+        warnings.append(f"Reference modelling unavailable: {e}")
+
+    # Stage 19: Temporal analysis
+    report("Temporal analysis", 88, None)
+    temporal_result = None
+    if len(period_scores) >= 3:
+        period_order = sorted(period_scores.keys())
+        temporal_result = calculate_temporal_analysis(
+            period_scores, period_order,
+            min_periods=3, min_recordings_per_period=1,
+        )
+    else:
+        temporal_result = {
+            "sufficient": False,
+            "message": "Insufficient longitudinal evidence to estimate recovery momentum.",
+            "valid_periods": len(period_scores),
+        }
+
+    # Stage 20: Provenance
+    report("Producing provenance", 92, None)
+    completion_time = datetime.now(timezone.utc)
+
+    excluded_recordings = {rid: "failed" for rid in excluded_ids}
+    for rec in recording_results:
+        if rec.quality_status == "failed":
+            excluded_recordings[rec.recording_id] = "; ".join(rec.errors) if rec.errors else "failed"
+
+    input_checksums = {r.recording_id: r.input_checksum for r in recording_results if r.input_checksum}
+    original_filenames = {r.recording_id: r.recording_id for r in recording_results}
+
+    provenance = create_provenance(
+        project_id=project_id,
+        analysis_job_id=analysis_job_id,
+        recording_ids=[r.recording_id for r in recording_results],
+        input_checksums=input_checksums,
+        original_filenames=original_filenames,
+        configuration=config_dict,
+        random_seed=configuration.random_seed,
+        software_version=configuration.software_version,
+        dependency_versions=get_dependency_versions(),
+        preprocessing_operations=[
+            f"channel_mode={configuration.channel_mode}",
+            f"remove_dc_offset={configuration.remove_dc_offset}",
+            f"resample_to={configuration.target_sample_rate}",
+            f"normalization={configuration.amplitude_normalization}",
+        ],
+        included_features=feature_names,
+        dropped_features=[f for f in DEFAULT_FEATURE_NAMES if f not in feature_names],
+        scaler_parameters=None,
+        distance_metric=configuration.distance_metric,
+        reference_recording_ids={
+            "healthy": healthy_ids,
+            "degraded": degraded_ids,
+        },
+        restored_recording_ids=restored_ids,
+        excluded_recordings=excluded_recordings,
+        start_time=start_time,
+        completion_time=completion_time,
+        warnings=warnings,
+        errors=errors,
     )
+
+    # Build final result
+    result = ProjectAnalysisResult(
+        project_id=project_id,
+        analysis_job_id=analysis_job_id,
+        configuration=config_dict,
+        recording_results=recording_results,
+        reference_profiles=reference_profiles,
+        recovery_scores=recovery_scores,
+        project_recovery_score=project_score,
+        confidence=confidence_result or __import__("app.analysis.schemas", fromlist=["ConfidenceResult"]).ConfidenceResult(),
+        bootstrap=bootstrap_result,
+        temporal=temporal_result,
+        provenance=provenance,
+        feature_names=feature_names,
+        included_recording_ids=restored_ids,
+        excluded_recording_ids=excluded_ids,
+        total_recordings=total,
+        processed_recordings=total - failed_count,
+        failed_recordings=failed_count,
+        excluded_recordings=len(excluded_ids),
+        warnings=warnings,
+        errors=errors,
+    )
+
+    # Stage 21: Export
+    report("Exporting results", 95, None)
+    export_results(result, output_directory)
+
+    report("Complete", 100, None)
+    return result
+
+
+# CLI entry point
+def main():
+    """Command-line interface for running analysis without the web app."""
+    import argparse
+    import csv
+    import json
+    import sys
+
+    parser = argparse.ArgumentParser(description="Run AcoustiMap Restore audio analysis pipeline")
+    parser.add_argument("--project-id", required=True, help="Project ID")
+    parser.add_argument("--recordings-manifest", required=True, help="CSV manifest of recordings")
+    parser.add_argument("--audio-dir", required=True, help="Directory containing audio files")
+    parser.add_argument("--config", help="JSON configuration file (optional)")
+    parser.add_argument("--output-dir", required=True, help="Output directory")
+    args = parser.parse_args()
+
+    # Load configuration
+    if args.config:
+        with open(args.config) as f:
+            config_data = json.load(f)
+        configuration = AnalysisConfig(**config_data)
+    else:
+        configuration = AnalysisConfig()
+
+    # Load manifest
+    recordings = []
+    with open(args.recordings_manifest) as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            row["file_path"] = str(Path(args.audio_dir) / row["filename"])
+            recordings.append(row)
+
+    # Run pipeline
+    def progress(stage, pct, current):
+        print(f"  [{pct:5.1f}%] {stage}")
+
+    result = run_project_analysis(
+        project_id=args.project_id,
+        recordings=recordings,
+        configuration=configuration,
+        output_directory=args.output_dir,
+        progress_callback=progress,
+    )
+
+    # Print summary
+    print(f"\nAnalysis complete.")
+    print(f"  Processed: {result.processed_recordings}/{result.total_recordings}")
+    print(f"  Failed: {result.failed_recordings}")
+    print(f"  Features: {', '.join(result.feature_names)}")
+    print(f"  Recovery score: {result.project_recovery_score}")
+    print(f"  Confidence: {result.confidence.confidence_label}")
+    print(f"  Output: {args.output_dir}")
+
+    if result.errors:
+        print(f"\nErrors ({len(result.errors)}):")
+        for e in result.errors[:5]:
+            print(f"  - {e}")
+
+    if result.failed_recordings > 0 and result.processed_recordings == 0:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,13 @@
+recording_id,filename,project_id,site_id,habitat_category,monitoring_period,timestamp
+healthy_001,healthy_001.wav,demo_project,healthy_site,healthy,baseline,2026-01-01T06:00:00Z
+healthy_002,healthy_002.wav,demo_project,healthy_site,healthy,baseline,2026-01-01T06:30:00Z
+healthy_003,healthy_003.wav,demo_project,healthy_site,healthy,baseline,2026-01-02T06:00:00Z
+degraded_001,degraded_001.wav,demo_project,degraded_site,degraded,baseline,2026-01-01T06:00:00Z
+degraded_002,degraded_002.wav,demo_project,degraded_site,degraded,baseline,2026-01-01T06:30:00Z
+degraded_003,degraded_003.wav,demo_project,degraded_site,degraded,baseline,2026-01-02T06:00:00Z
+restored_001,restored_001.wav,demo_project,restored_site,restored,month_1,2026-02-01T06:00:00Z
+restored_002,restored_002.wav,demo_project,restored_site,restored,month_1,2026-02-01T06:30:00Z
+restored_003,restored_003.wav,demo_project,restored_site,restored,month_3,2026-04-01T06:00:00Z
+restored_004,restored_004.wav,demo_project,restored_site,restored,month_3,2026-04-01T06:30:00Z
+restored_005,restored_005.wav,demo_project,restored_site,restored,month_6,2026-06-01T06:00:00Z
+restored_006,restored_006.wav,demo_project,restored_site,restored,month_6,2026-06-01T06:30:00Z
