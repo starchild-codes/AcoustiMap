@@ -23,7 +23,7 @@
 |-----------|----------------|
 | Any fatal flag | failed |
 | ≥ 2 exclude_recommended flags | exclude_recommended |
-| ≥ 1 exclude_recommended or ≥ 2 review flags | review |
+| ≥ 1 exclude_recommended or ≥ 1 review flag | review |
 | Otherwise | valid |
 
 The system **never** automatically excludes recordings. The user makes the final decision.

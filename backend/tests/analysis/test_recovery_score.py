@@ -8,11 +8,11 @@ from app.analysis.reference_model import build_reference_model
 from app.analysis.schemas import RecoveryScoreResult
 
 
-FEATURE_NAMES = ["aci", "bi", "spectral_entropy"]
+FEATURE_NAMES = ["aci", "biological_band_spectral_magnitude_ratio", "spectral_entropy"]
 
 
 def _features(aci, bi, entropy):
-    return {"aci": aci, "bi": bi, "spectral_entropy": entropy}
+    return {"aci": aci, "biological_band_spectral_magnitude_ratio": bi, "spectral_entropy": entropy}
 
 
 def _build_model():

@@ -40,7 +40,7 @@ from .config import AnalysisConfig
 from .schemas import (
     ProjectAnalysisResult, RecordingResult, ReferenceProfile,
 )
-from .exceptions import AudioAnalysisError, AudioDecodeError, InvalidAudioError, InsufficientReferenceDataError
+from .exceptions import AudioAnalysisError, AudioDecodeError, InvalidAudioError, InsufficientReferenceDataError, AnalysisCancelledError
 from .audio_loader import load_audio
 from .preprocessing import preprocess
 from .segmentation import segment_audio
@@ -58,7 +58,7 @@ from .spectrograms import generate_all_artifacts
 logger = logging.getLogger(__name__)
 
 DEFAULT_FEATURE_NAMES = [
-    "aci", "bi", "spectral_entropy", "temporal_entropy",
+    "aci", "biological_band_spectral_magnitude_ratio", "spectral_entropy", "temporal_entropy",
     "biological_band_occupancy", "ndsi", "anthropogenic_noise_pressure",
 ]
 
@@ -70,6 +70,7 @@ def run_project_analysis(
     output_directory: str,
     analysis_job_id: str = "",
     progress_callback: Callable[[str, float, str | None], None] | None = None,
+    cancellation_check: Callable[[], bool] | None = None,
 ) -> ProjectAnalysisResult:
     """
     Run the complete analysis pipeline.
@@ -93,6 +94,8 @@ def run_project_analysis(
     errors: list[str] = []
 
     def report(stage: str, pct: float, current: str | None = None):
+        if cancellation_check and cancellation_check():
+            raise AnalysisCancelledError("Analysis cancelled by user")
         if progress_callback:
             progress_callback(stage, pct, current)
 
@@ -151,6 +154,8 @@ def run_project_analysis(
             # Stage 7-9: Process each segment
             segment_results = []
             for seg in segments:
+                if cancellation_check and cancellation_check():
+                    raise AnalysisCancelledError("Analysis cancelled by user")
                 seg_result = process_segment(seg, sr, config_dict)
                 segment_results.append(seg_result)
 
@@ -181,6 +186,8 @@ def run_project_analysis(
 
             recording_results.append(recording_result)
 
+        except AnalysisCancelledError:
+            raise
         except (AudioDecodeError, InvalidAudioError) as e:
             logger.error("Failed to process %s: %s", rec_id, e)
             errors.append(f"{rec_id}: {e}")
@@ -228,7 +235,7 @@ def run_project_analysis(
     healthy_ids: list[str] = []
     degraded_ids: list[str] = []
     restored_ids: list[str] = []
-    period_scores: dict[str, list[float]] = {}
+    period_observations: dict[str, list[tuple[float, str | None]]] = {}
 
     for rec in recording_results:
         if rec.quality_status not in ("valid", "review"):
@@ -248,11 +255,6 @@ def run_project_analysis(
         elif habitat == "restored":
             restored_features.append(eco)
             restored_ids.append(rec.recording_id)
-
-            # Track period scores
-            period = rec_meta.get("monitoring_period", "unknown")
-            if rec.ecoacoustic is not None:
-                period_scores.setdefault(period, [])
 
     # Stage 14: Construct reference profiles
     report("Building reference model", 58, None)
@@ -304,12 +306,12 @@ def run_project_analysis(
         score_agg = aggregate_scores(recovery_scores)
         project_score = score_agg.get("median")
 
-        # Track period scores from recovery scores
+        # Track dated period observations from recovery scores.
         for rs in recovery_scores:
             rec_meta = next((r for r in recordings if r.get("recording_id") == rs.recording_id), {})
-            period = rec_meta.get("monitoring_period", "unknown")
+            period = rec_meta.get("monitoring_period") or "Unspecified period"
             if rs.recovery_score is not None:
-                period_scores.setdefault(period, []).append(rs.recovery_score)
+                period_observations.setdefault(period, []).append((rs.recovery_score, rec_meta.get("timestamp")))
 
         # Stage 17: Evidence consistency
         report("Calculating confidence", 74, None)
@@ -327,7 +329,7 @@ def run_project_analysis(
                 healthy_features, degraded_features, restored_features,
                 healthy_ids, degraded_ids, restored_ids,
                 feature_names,
-                n_iterations=min(bootstrap_iterations, 100),  # Cap at 100 for speed
+                n_iterations=bootstrap_iterations,
                 random_seed=configuration.random_seed,
                 scaling_method=configuration.reference_scaling,
                 distance_metric=configuration.distance_metric,
@@ -355,19 +357,15 @@ def run_project_analysis(
 
     # Stage 19: Temporal analysis
     report("Temporal analysis", 88, None)
-    temporal_result = None
-    if len(period_scores) >= 3:
-        period_order = sorted(period_scores.keys())
-        temporal_result = calculate_temporal_analysis(
-            period_scores, period_order,
-            min_periods=3, min_recordings_per_period=1,
-        )
-    else:
-        temporal_result = {
-            "sufficient": False,
-            "message": "Insufficient longitudinal evidence to estimate recovery momentum.",
-            "valid_periods": len(period_scores),
-        }
+    temporal_result = calculate_temporal_analysis(
+        period_observations,
+        min_periods=3,
+        min_recordings_per_period=1,
+        stable_threshold_per_year=configuration.temporal_stable_threshold_per_year,
+        strong_threshold_per_year=configuration.temporal_strong_threshold_per_year,
+        bootstrap_iterations=configuration.temporal_bootstrap_iterations,
+        random_seed=configuration.random_seed,
+    )
 
     # Stage 20: Provenance
     report("Producing provenance", 92, None)

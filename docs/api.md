@@ -46,12 +46,16 @@ Interactive docs: `http://localhost:8001/docs`
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | /api/projects/{project_id}/analysis-jobs | Create analysis job |
+| GET | /api/projects/{project_id}/analysis-jobs | List project jobs |
 | GET | /api/analysis-jobs/{job_id} | Get job status |
+| GET | /api/analysis-jobs/{job_id}/results | Get job-scoped recording results |
 | POST | /api/analysis-jobs/{job_id}/cancel | Cancel job |
 | POST | /api/analysis-jobs/{job_id}/retry | Retry failed job |
 | GET | /api/recordings/{recording_id}/analyses | List analyses for recording |
 | GET | /api/projects/{project_id}/summary | Get project summary |
 | POST | /api/analyses/{analysis_id}/manual-review | Create manual quality override |
+| GET | /api/analyses/{analysis_id}/artifacts/{name} | Download a scoped analysis artifact |
+| GET | /api/recordings/{recording_id}/audio | Stream scoped recording audio |
 
 ## Exports
 

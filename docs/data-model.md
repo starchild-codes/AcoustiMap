@@ -35,7 +35,7 @@
 - name, is_default
 - target_sample_rate, target_channel_mode, clip_duration, start_offset
 - freq_min, freq_max, fft_size, window_size, hop_length
-- aci_freq_step, aci_time_step, bi_freq_min, bi_freq_max
+- aci_freq_step, aci_time_step, biological_band_min_hz, biological_band_max_hz
 - silence_threshold, clipping_threshold, low_freq_noise_threshold
 - normalisation_method, similarity_scaling_method, random_seed, software_version
 
@@ -66,7 +66,7 @@
 
 ### ProjectSummary
 - id (PK), project_id (FK), config_id (FK)
-- recovery_score, healthy_similarity, degraded_similarity
+- recovery_score, median_distance_to_healthy, median_distance_to_degraded
 - improvement_over_degraded, evidence_consistency
 - confidence_label, confidence_reasons (JSON)
 - bootstrap_median, bootstrap_mean, bootstrap_std, bootstrap_ci_low, bootstrap_ci_high

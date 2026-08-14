@@ -57,29 +57,29 @@ npm run dev
 
 ## What works
 
-- Create, edit, archive, delete, and duplicate projects
+- Create, edit, archive, delete, and copy project metadata
 - Upload audio recordings (WAV, FLAC, MP3, M4A, OGG) with metadata
-- Real Python audio analysis: ACI, BI, spectral entropy, temporal entropy, ADI, AEI, NDSI
+- Real Python audio analysis: ACI, Biological-Band Spectral Magnitude Ratio (×10), spectral entropy, temporal entropy, ADI, AEI, NDSI
 - Technical quality features: RMS, peak, clipping, silence, zero-crossing rate, frequency band energy
 - Spectrogram and waveform generation from uploaded audio
 - Rule-based quality control with manual override and audit trail
 - Reference model with transparent recovery score calculation
 - Bootstrap uncertainty estimation
+- Chronological Theil–Sen recovery momentum using actual elapsed dates, with internal bootstrap bounds
+- API-backed React project setup, job progress, results, quality flags, artifacts, and exports
 - Export project JSON, recording CSV, and reproducible analysis bundle (ZIP)
 - Docker Compose for one-command setup
 
 ## What is prototype-only
 
-- Monitoring period temporal analysis (requires longitudinal data)
 - Feature ablation experiments page
 - Negative controls (label shuffling, reference swap)
 - Leaflet map view for sites
 - Provenance drawer
-- Frontend integration with backend analysis results (backend API is ready, frontend pages need wiring)
 
 ## Scientific claims supported
 
-- Acoustic indices (ACI, BI, entropy, etc.) are calculated from real audio using documented formulas
+- Acoustic features are calculated from real audio using documented formulas
 - Recovery score is transparently computed from category centroid distances
 - Bootstrap uncertainty reflects actual resampling of the data
 - Quality flags are based on measured signal properties

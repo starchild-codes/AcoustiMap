@@ -13,14 +13,14 @@
 **Interpretation:** Captures amplitude variation patterns. NOT a species count.
 **Limitations:** Sensitive to gain and environmental noise.
 
-## BI — Bioacoustic Index
+## Biological-Band Spectral Magnitude Ratio (×10)
 
-**Definition:** BI = (energy in biological band / total energy) × 10
-**Source:** Boelman et al. (2007)
+**Definition:** ratio = (sum of linear STFT magnitude in the configured biological band / total linear STFT magnitude) × 10
+**Source:** Project-specific feature. This is not the canonical Bioacoustic Index described by Boelman et al. (2007).
 **Implementation:** Custom implementation using STFT magnitude
 **Parameters:**
-- `bi_min_hz`: Lower bound (default 1000 Hz)
-- `bi_max_hz`: Upper bound (default 10000 Hz)
+- `biological_band_min_hz`: Lower bound (default 1000 Hz)
+- `biological_band_max_hz`: Upper bound (default 10000 Hz)
 **Output range:** [0, 10]
 **Edge cases:** Returns 0.0 for silence (genuine result)
 **Interpretation:** Proxy for biological acoustic activity in the configured band.

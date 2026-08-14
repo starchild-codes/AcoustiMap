@@ -1,11 +1,12 @@
 /** Analysis job and results API functions */
 
-import { apiRequest } from './client'
+import { apiRequest, API_BASE_URL } from './client'
 
 export interface AnalysisJob {
   id: string
   project_id: string
   config_id: string
+  recording_ids: string[]
   state: string
   total_recordings: number
   processed_recordings: number
@@ -65,8 +66,8 @@ export interface ProjectSummary {
   project_id: string
   config_id: string
   recovery_score: number | null
-  healthy_similarity: number | null
-  degraded_similarity: number | null
+  median_distance_to_healthy: number | null
+  median_distance_to_degraded: number | null
   improvement_over_degraded: number | null
   evidence_consistency: number | null
   confidence_label: string
@@ -77,11 +78,14 @@ export interface ProjectSummary {
   bootstrap_ci_low: number | null
   bootstrap_ci_high: number | null
   bootstrap_iterations: number
+  bootstrap_requested_iterations: number
   included_recording_ids: string[]
   excluded_recording_ids: string[]
   feature_names: string[]
   scaling_method: string
   warnings: string[]
+  reference_profiles: Record<string, unknown>
+  temporal_result: Record<string, unknown>
   calculated_at: string
 }
 
@@ -98,6 +102,18 @@ export async function createAnalysisJob(
 
 export async function getAnalysisJob(jobId: string): Promise<AnalysisJob> {
   return apiRequest<AnalysisJob>(`/api/analysis-jobs/${jobId}`)
+}
+
+export async function listAnalysisJobs(projectId: string): Promise<AnalysisJob[]> {
+  return apiRequest<AnalysisJob[]>(`/api/projects/${projectId}/analysis-jobs`)
+}
+
+export async function listJobResults(jobId: string): Promise<RecordingAnalysis[]> {
+  return apiRequest<RecordingAnalysis[]>(`/api/analysis-jobs/${jobId}/results`)
+}
+
+export function artifactUrl(analysisId: string, artifactName: string): string {
+  return `${API_BASE_URL}/api/analyses/${analysisId}/artifacts/${encodeURIComponent(artifactName)}`
 }
 
 export async function cancelJob(jobId: string): Promise<AnalysisJob> {

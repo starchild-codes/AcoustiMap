@@ -34,7 +34,7 @@ All calculated in Python from decoded audio samples:
 | Index | Method | Reference |
 |-------|--------|-----------|
 | ACI | Sum of \|I[f,t] - I[f,t+1]\| / Sum(I[f,t] + I[f,t+1]) | Pieretti et al. 2011 |
-| BI | Energy in 2-8 kHz band / total energy, scaled ×10 | Boelman et al. 2007 |
+| Biological-Band Spectral Magnitude Ratio (×10) | Linear STFT magnitude in the configured band / total STFT magnitude, scaled ×10 | Project-specific feature; not canonical BI |
 | Spectral entropy | Shannon entropy of normalised power spectrum / log2(N) | — |
 | Temporal entropy | Shannon entropy of Hilbert envelope / log2(N) | — |
 | Frequency-band occupancy | Proportion of bins above median energy | — |

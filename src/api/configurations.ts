@@ -19,14 +19,18 @@ export interface AnalysisConfig {
   hop_length: number
   aci_freq_step: number
   aci_time_step: number
-  bi_freq_min: number
-  bi_freq_max: number
+  biological_band_min_hz: number
+  biological_band_max_hz: number
   silence_threshold: number
   clipping_threshold: number
   low_freq_noise_threshold: number
   normalisation_method: string
   similarity_scaling_method: string
   random_seed: number
+  bootstrap_iterations: number
+  temporal_bootstrap_iterations: number
+  temporal_stable_threshold_per_year: number
+  temporal_strong_threshold_per_year: number
   software_version: string
   created_at: string
   updated_at: string
@@ -55,14 +59,18 @@ export interface AnalysisConfigCreate {
   hop_length?: number
   aci_freq_step?: number
   aci_time_step?: number
-  bi_freq_min?: number
-  bi_freq_max?: number
+  biological_band_min_hz?: number
+  biological_band_max_hz?: number
   silence_threshold?: number
   clipping_threshold?: number
   low_freq_noise_threshold?: number
   normalisation_method?: string
   similarity_scaling_method?: string
   random_seed?: number
+  bootstrap_iterations?: number
+  temporal_bootstrap_iterations?: number
+  temporal_stable_threshold_per_year?: number
+  temporal_strong_threshold_per_year?: number
 }
 
 export async function listConfigurations(projectId: string): Promise<AnalysisConfig[]> {

@@ -308,7 +308,7 @@ export default function LibraryTab() {
                   <span className="inline-flex items-center gap-1">ACI <SortIcon field="aci" /></span>
                 </th>
                 <th className="px-3 py-2 text-left text-xs font-medium uppercase text-charcoal-500 cursor-pointer" onClick={() => toggleSort('bi')}>
-                  <span className="inline-flex items-center gap-1">BI <SortIcon field="bi" /></span>
+                  <span className="inline-flex items-center gap-1">Biological-band ratio <SortIcon field="bi" /></span>
                 </th>
                 <th className="px-3 py-2 text-left text-xs font-medium uppercase text-charcoal-500 cursor-pointer" onClick={() => toggleSort('similarity')}>
                   <span className="inline-flex items-center gap-1">Sim. <SortIcon field="similarity" /></span>

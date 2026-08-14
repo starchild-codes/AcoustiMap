@@ -91,7 +91,7 @@ export default function EvidenceCard({ evidence }: { evidence: AcousticEvidence 
           max={1}
         />
         <MetricRow
-          label="Bioacoustic Index"
+          label="Biological-Band Spectral Magnitude Ratio (×10)"
           value={evidence.bioacousticIndex.toFixed(1)}
           bar
           color={t.bar}

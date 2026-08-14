@@ -1,7 +1,7 @@
 """Pydantic schemas for API request/response validation."""
 
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from app.models.models import ProjectStatus, PrivacyLevel, SiteType, JobState, QualityStatus, FlagSeverity
 
 
@@ -110,6 +110,11 @@ class RecordingCreate(BaseModel):
     recorder_id: str = ""
     notes: str = ""
 
+    @field_validator("timestamp")
+    @classmethod
+    def validate_timestamp(cls, value: str | None) -> str | None:
+        return _validated_timestamp(value)
+
 
 class RecordingResponse(BaseModel):
     id: str
@@ -139,30 +144,59 @@ class RecordingUpdate(BaseModel):
     recorder_id: str | None = None
     notes: str | None = None
 
+    @field_validator("timestamp")
+    @classmethod
+    def validate_timestamp(cls, value: str | None) -> str | None:
+        return _validated_timestamp(value)
+
 
 class AnalysisConfigBase(BaseModel):
     name: str
     is_default: bool = False
-    target_sample_rate: int = 22050
+    target_sample_rate: int = Field(default=22050, ge=8000, le=192000)
     target_channel_mode: str = "mono"
-    clip_duration: float = 60.0
-    start_offset: float = 0.0
-    freq_min: float = 0.0
-    freq_max: float = 11025.0
-    fft_size: int = 2048
-    window_size: int = 2048
-    hop_length: int = 512
+    clip_duration: float = Field(default=60.0, gt=0)
+    start_offset: float = Field(default=0.0, ge=0)
+    freq_min: float = Field(default=0.0, ge=0)
+    freq_max: float = Field(default=11025.0, gt=0)
+    fft_size: int = Field(default=2048, ge=256)
+    window_size: int = Field(default=2048, ge=256)
+    hop_length: int = Field(default=512, ge=1)
     aci_freq_step: float = 1000.0
     aci_time_step: float = 1.0
-    bi_freq_min: float = 2000.0
-    bi_freq_max: float = 8000.0
+    biological_band_min_hz: float = 2000.0
+    biological_band_max_hz: float = 8000.0
     silence_threshold: float = 0.001
-    clipping_threshold: float = 0.99
-    low_freq_noise_threshold: float = 0.7
+    clipping_threshold: float = Field(default=0.99, gt=0, lt=1)
+    low_freq_noise_threshold: float = Field(default=0.7, ge=0, le=1)
     normalisation_method: str = "none"
     similarity_scaling_method: str = "standard"
-    random_seed: int = 42
+    random_seed: int = Field(default=42, ge=0)
+    bootstrap_iterations: int = Field(default=500, ge=0, le=2000)
+    temporal_bootstrap_iterations: int = Field(default=500, ge=0, le=2000)
+    temporal_stable_threshold_per_year: float = Field(default=1.0, ge=0)
+    temporal_strong_threshold_per_year: float = Field(default=5.0, ge=0)
     software_version: str = "1.0.0"
+
+    @model_validator(mode="after")
+    def validate_ranges(self):
+        if self.freq_min >= self.freq_max:
+            raise ValueError("freq_min must be lower than freq_max")
+        if self.freq_max > self.target_sample_rate / 2:
+            raise ValueError("freq_max must not exceed the Nyquist frequency")
+        if self.hop_length > self.fft_size:
+            raise ValueError("hop_length must not exceed fft_size")
+        if self.biological_band_min_hz >= self.biological_band_max_hz:
+            raise ValueError("biological_band_min_hz must be lower than biological_band_max_hz")
+        if self.temporal_strong_threshold_per_year < self.temporal_stable_threshold_per_year:
+            raise ValueError("temporal strong threshold must be at least the stable threshold")
+        if self.target_channel_mode not in ("mono", "stereo"):
+            raise ValueError("target_channel_mode must be mono or stereo")
+        if self.normalisation_method not in ("none", "peak", "rms"):
+            raise ValueError("normalisation_method must be none, peak, or rms")
+        if self.similarity_scaling_method not in ("none", "standard", "robust"):
+            raise ValueError("similarity_scaling_method must be none, standard, or robust")
+        return self
 
 
 class AnalysisConfigCreate(AnalysisConfigBase):
@@ -183,14 +217,18 @@ class AnalysisConfigUpdate(BaseModel):
     hop_length: int | None = None
     aci_freq_step: float | None = None
     aci_time_step: float | None = None
-    bi_freq_min: float | None = None
-    bi_freq_max: float | None = None
+    biological_band_min_hz: float | None = None
+    biological_band_max_hz: float | None = None
     silence_threshold: float | None = None
     clipping_threshold: float | None = None
     low_freq_noise_threshold: float | None = None
     normalisation_method: str | None = None
     similarity_scaling_method: str | None = None
     random_seed: int | None = None
+    bootstrap_iterations: int | None = Field(default=None, ge=0, le=2000)
+    temporal_bootstrap_iterations: int | None = Field(default=None, ge=0, le=2000)
+    temporal_stable_threshold_per_year: float | None = Field(default=None, ge=0)
+    temporal_strong_threshold_per_year: float | None = Field(default=None, ge=0)
 
 
 class AnalysisConfigResponse(AnalysisConfigBase):
@@ -222,6 +260,7 @@ class AnalysisJobResponse(BaseModel):
     id: str
     project_id: str
     config_id: str
+    recording_ids: list[str]
     state: JobState
     total_recordings: int
     processed_recordings: int
@@ -299,8 +338,8 @@ class ProjectSummaryResponse(BaseModel):
     project_id: str
     config_id: str
     recovery_score: float | None
-    healthy_similarity: float | None
-    degraded_similarity: float | None
+    median_distance_to_healthy: float | None
+    median_distance_to_degraded: float | None
     improvement_over_degraded: float | None
     evidence_consistency: float | None
     confidence_label: str
@@ -311,12 +350,28 @@ class ProjectSummaryResponse(BaseModel):
     bootstrap_ci_low: float | None
     bootstrap_ci_high: float | None
     bootstrap_iterations: int
+    bootstrap_requested_iterations: int
     included_recording_ids: list
     excluded_recording_ids: list
     feature_names: list
     scaling_method: str
     warnings: list
+    reference_profiles: dict
+    temporal_result: dict
     calculated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+def _validated_timestamp(value: str | None) -> str | None:
+    if value in (None, ""):
+        return None
+    candidate = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError as exc:
+        raise ValueError("timestamp must be a valid ISO 8601 date/time") from exc
+    if parsed.tzinfo is None:
+        raise ValueError("timestamp must include a timezone")
+    return parsed.isoformat()

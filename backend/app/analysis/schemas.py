@@ -80,7 +80,7 @@ class EcoacousticFeatures(BaseModel):
     """Ecoacoustic indices."""
     aci: float | None = None
     aci_by_band: dict[str, float] | None = None
-    bi: float | None = None
+    biological_band_spectral_magnitude_ratio: float | None = None
     spectral_entropy: float | None = None
     temporal_entropy: float | None = None
     biological_band_occupancy: float | None = None

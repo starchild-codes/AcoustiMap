@@ -298,7 +298,7 @@ function RecordingComparisonCard({
           <QualityBadge status={recording.quality.status} size="xs" />
         </div>
         <MetricRow label="ACI" value={recording.importedFeatures?.aci} />
-        <MetricRow label="BI" value={recording.importedFeatures?.bi} />
+        <MetricRow label="Biological-band magnitude ratio (×10)" value={recording.importedFeatures?.bi} />
         <MetricRow label="Bio. freq. occupancy" value={recording.importedFeatures?.biologicalFrequencyOccupancy} />
         <MetricRow label="Anthrop. noise pressure" value={recording.importedFeatures?.anthropogenicNoisePressure} />
         <MetricRow label="Spectral entropy" value={recording.importedFeatures?.spectralEntropy} />
@@ -375,7 +375,7 @@ function FeatureComparisonPanel({
 }) {
   const metrics: { key: string; label: string; tooltip: string }[] = [
     { key: 'aci', label: 'ACI', tooltip: 'Acoustic Complexity Index — captures variation in amplitude across frequency bins. Higher values suggest more acoustic activity but do not directly indicate biodiversity.' },
-    { key: 'bi', label: 'BI', tooltip: 'Bioacoustic Index — area under the curve in the 2–8 kHz band. Correlates with biological sounds but interpretation is ecosystem-dependent.' },
+    { key: 'bi', label: 'Biological-band magnitude ratio (×10)', tooltip: 'Ratio of linear STFT magnitude in the configured biological band to total magnitude, scaled ×10. Not the canonical Bioacoustic Index.' },
     { key: 'biologicalFrequencyOccupancy', label: 'Bio. freq. occupancy', tooltip: 'Proportion of frequency bands occupied by biological sounds. Higher occupancy suggests more diverse acoustic activity.' },
     { key: 'anthropogenicNoisePressure', label: 'Anthrop. noise pressure', tooltip: 'Measure of human-caused noise (boat engines, construction). Higher values indicate more acoustic disturbance.' },
     { key: 'spectralEntropy', label: 'Spectral entropy', tooltip: 'Evenness of energy across the frequency spectrum. Higher entropy suggests a more diverse soundscape but may also indicate noise.' },

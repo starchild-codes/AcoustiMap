@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Sidebar, { type PageId } from './components/Sidebar'
 import TopNav from './components/TopNav'
 import OverviewPage from './pages/OverviewPage'
 import SoundscapePage from './pages/SoundscapePage'
 import ProjectsPage from './pages/ProjectsPage'
 import PlaceholderPage from './components/PlaceholderPage'
-import { SoundscapeProvider } from './soundscape/SoundscapeContext'
+import { getProject, type Project } from './api/projects'
 import { MapPin } from 'lucide-react'
 
 const pageTitles: Record<PageId, string> = {
@@ -31,6 +31,27 @@ const navItems: { id: PageId; label: string }[] = [
 export default function App() {
   const [active, setActive] = useState<PageId>('overview')
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('project'))
+  const [activeProject, setActiveProject] = useState<Project | null>(null)
+
+  useEffect(() => {
+    if (!activeProjectId) {
+      setActiveProject(null)
+      return
+    }
+    getProject(activeProjectId).then(setActiveProject).catch(() => {
+      setActiveProject(null)
+      setActiveProjectId(null)
+    })
+  }, [activeProjectId])
+
+  const openProject = (projectId: string) => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('project', projectId)
+    window.history.pushState({}, '', url)
+    setActiveProjectId(projectId)
+    setActive('soundscape')
+  }
 
   const navigate = (id: PageId) => {
     setActive(id)
@@ -56,16 +77,14 @@ export default function App() {
       )}
 
       <div className="flex flex-1 flex-col min-w-0">
-        <TopNav onMenuClick={() => setMobileOpen(true)} />
+        <TopNav project={activeProject} onMenuClick={() => setMobileOpen(true)} onProjectsClick={() => navigate('projects')} />
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 sm:py-8 max-w-[1400px] w-full mx-auto">
           {active === 'overview' ? (
-            <OverviewPage onNavigate={navigate} />
+            <OverviewPage onNavigate={navigate} projectId={activeProjectId} />
           ) : active === 'soundscape' ? (
-            <SoundscapeProvider>
-              <SoundscapePage />
-            </SoundscapeProvider>
+            <SoundscapePage projectId={activeProjectId} onChooseProject={() => navigate('projects')} />
           ) : active === 'projects' ? (
-            <ProjectsPage onNavigate={navigate} />
+            <ProjectsPage onNavigate={navigate} onOpenProject={openProject} />
           ) : (
             <PlaceholderPage title={pageTitles[active]} />
           )}

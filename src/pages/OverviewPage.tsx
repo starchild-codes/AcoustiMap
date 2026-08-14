@@ -1,169 +1,98 @@
-import { MapPin, ArrowRight, Clock, CalendarDays } from 'lucide-react'
-import MetricCard from '../components/MetricCard'
-import TrajectoryChart from '../components/TrajectoryChart'
-import EvidenceCard from '../components/EvidenceCard'
-import InterpretationPanel from '../components/InterpretationPanel'
-import AlertRow from '../components/AlertRow'
-import SiteMap from '../components/SiteMap'
-import SiteStatusRow, { RecorderSummary } from '../components/SiteStatusRow'
-import RecoveryGap from '../components/RecoveryGap'
-import {
-  project,
-  overviewInterpretation,
-  metrics,
-  acousticEvidence,
-  interpretationText,
-  interpretationRows,
-  interpretationLimitations,
-  alerts,
-  sites,
-} from '../data/mockData'
+import { useEffect, useState } from 'react'
+import { ArrowRight, CircleAlert, Database, FolderOpen, Loader2, TrendingUp } from 'lucide-react'
 import type { PageId } from '../components/Sidebar'
+import { listRecordings, type Recording } from '../api/recordings'
+import { getProjectSummary, listAnalysisJobs, type AnalysisJob, type ProjectSummary } from '../api/analysis'
 
 interface OverviewPageProps {
   onNavigate: (id: PageId) => void
+  projectId: string | null
 }
 
-export default function OverviewPage({ onNavigate }: OverviewPageProps) {
+export default function OverviewPage({ onNavigate, projectId }: OverviewPageProps) {
+  const [recordings, setRecordings] = useState<Recording[]>([])
+  const [jobs, setJobs] = useState<AnalysisJob[]>([])
+  const [summary, setSummary] = useState<ProjectSummary | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!projectId) return
+    setLoading(true)
+    setError(null)
+    Promise.all([listRecordings(projectId), listAnalysisJobs(projectId), getProjectSummary(projectId)])
+      .then(([nextRecordings, nextJobs, nextSummary]) => {
+        setRecordings(nextRecordings)
+        setJobs(nextJobs)
+        setSummary(nextSummary)
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not load project results'))
+      .finally(() => setLoading(false))
+  }, [projectId])
+
+  if (!projectId) {
+    return <EmptyState title="Select a restoration project" text="Create or open a project, upload reference and restoration recordings, then run the real acoustic analysis." action="Open Projects" onClick={() => onNavigate('projects')} />
+  }
+  if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-7 w-7 animate-spin text-forest-600" /></div>
+  if (error) return <EmptyState title="Project data unavailable" text={error} action="Open project workspace" onClick={() => onNavigate('soundscape')} />
+
+  const latestJob = jobs[0]
+  const temporal = summary?.temporal_result as { sufficient?: boolean; direction?: string; slope_points_per_year?: number; message?: string } | undefined
+  const excluded = summary?.excluded_recording_ids.length ?? 0
+
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
-      {/* Header — compact, scannable */}
-      <header className="flex flex-col gap-3">
-        <div className="flex items-center gap-2 text-xs text-charcoal-400">
-          <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>{project.location}</span>
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-forest-700">Live backend results</p>
+          <h1 className="mt-1 font-display text-3xl font-semibold text-charcoal-900">Restoration overview</h1>
+          <p className="mt-2 max-w-3xl text-sm text-charcoal-600">Reference-based acoustic evidence of change. It does not identify species, infer abundance, prove biodiversity change, or establish causation.</p>
         </div>
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-          <div>
-            <h1 className="font-display text-2xl sm:text-3xl font-semibold text-charcoal-900 tracking-tight">
-              Restoration Overview
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-charcoal-600">
-              {overviewInterpretation}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <span className="pill ring-1 bg-forest-50 text-forest-700 ring-forest-200">
-              <span className="h-1.5 w-1.5 rounded-full bg-forest-500" />
-              Positive acoustic recovery
-            </span>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-4 text-xs text-charcoal-400">
-          <span className="inline-flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-            Last updated: {project.lastUpdated}
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
-            Monitoring period: {project.monitoringDateRange}
-          </span>
-        </div>
+        <button onClick={() => onNavigate('soundscape')} className="inline-flex items-center gap-2 rounded-lg bg-forest-700 px-4 py-2 text-sm font-medium text-white hover:bg-forest-800">
+          Open project workspace <ArrowRight className="h-4 w-4" />
+        </button>
       </header>
 
-      {/* Metric cards */}
-      <section aria-label="Primary metrics">
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-          {metrics.map((m) => (
-            <MetricCard key={m.id} metric={m} />
-          ))}
-        </div>
-      </section>
-
-      {/* Trajectory chart + Recovery gap */}
-      <section aria-label="Recovery trajectory" className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <TrajectoryChart />
-        </div>
-        <div className="lg:col-span-1">
-          <RecoveryGap />
-        </div>
-      </section>
-
-      {/* Acoustic evidence + Interpretation */}
-      <section aria-label="Acoustic evidence" className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 flex flex-col gap-4">
-          <div className="flex items-baseline justify-between flex-wrap gap-3">
-            <h2 className="section-title text-xl">Latest Acoustic Evidence</h2>
-            <button
-              onClick={() => onNavigate('soundscape')}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-forest-700 px-3.5 py-2 text-sm font-medium text-sand-50 hover:bg-forest-800 transition-colors focus-visible:ring-2 focus-visible:ring-forest-500 focus-visible:ring-offset-2"
-            >
-              Open Soundscape Comparison
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {acousticEvidence.map((e) => (
-              <EvidenceCard key={e.label} evidence={e} />
-            ))}
-          </div>
-          {/* Connector scale showing restored reef between degraded and healthy */}
-          <div className="card p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-charcoal-400">
-                Recovery position
-              </span>
-            </div>
-            <div className="relative h-2 w-full rounded-full bg-gradient-to-r from-charcoal-300 via-ocean-300 to-forest-500">
-              <div
-                className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-charcoal-400 shadow-sm"
-                style={{ left: '49%' }}
-                aria-label="Degraded reef at 49% similarity"
-              />
-              <div
-                className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-ocean-600 shadow-sm ring-2 ring-ocean-200"
-                style={{ left: '81%' }}
-                aria-label="Restored reef at 81% similarity"
-              />
-              <div
-                className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-forest-600 shadow-sm"
-                style={{ left: '100%' }}
-                aria-label="Healthy reference at 100% similarity"
-              />
-            </div>
-            <div className="mt-2 flex justify-between text-[10px] font-medium uppercase tracking-wide text-charcoal-400">
-              <span>Degraded 49%</span>
-              <span className="text-ocean-700">Restored 81%</span>
-              <span>Healthy 100%</span>
-            </div>
-          </div>
-        </div>
-
-        <InterpretationPanel
-          text={interpretationText}
-          rows={interpretationRows}
-          limitations={interpretationLimitations}
+      {!summary ? (
+        <EmptyState
+          title={recordings.length ? 'No completed project analysis yet' : 'Upload recordings to begin'}
+          text={latestJob?.state === 'failed' ? latestJob.error_summary : 'The overview stays empty until the backend has produced a real result.'}
+          action="Continue setup"
+          onClick={() => onNavigate('soundscape')}
         />
-      </section>
+      ) : (
+        <>
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <ResultCard label="Acoustic recovery score" value={summary.recovery_score == null ? 'Unavailable' : `${summary.recovery_score.toFixed(1)} / 100`} detail="Position between local degraded and healthy acoustic references" />
+            <ResultCard label="Bootstrap interval" value={summary.bootstrap_ci_low == null ? 'Unavailable' : `${summary.bootstrap_ci_low.toFixed(1)}–${summary.bootstrap_ci_high?.toFixed(1)}`} detail={`${summary.bootstrap_iterations}/${summary.bootstrap_requested_iterations} successful/requested iterations`} />
+            <ResultCard label="Evidence confidence" value={summary.confidence_label || 'Not rated'} detail={summary.confidence_reasons[0] || 'See project warnings and exclusions'} />
+            <ResultCard label="Recordings" value={`${recordings.length}`} detail={`${summary.included_recording_ids.length} restoration included · ${excluded} excluded`} />
+          </section>
 
-      {/* Alerts + Site monitoring */}
-      <section aria-label="Monitoring alerts and site status" className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Alerts — activity feed */}
-        <div className="card p-5 flex flex-col gap-3">
-          <h2 className="section-title">Monitoring Alerts</h2>
-          <div className="flex flex-col gap-2">
-            {alerts.map((a) => (
-              <AlertRow key={a.id} alert={a} />
-            ))}
-          </div>
-        </div>
-
-        {/* Site map + recorder status */}
-        <div className="xl:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
-          <SiteMap />
-          <div className="card p-5 flex flex-col">
-            <h2 className="section-title mb-2">Recorder Status</h2>
-            {sites.map((s) => (
-              <SiteStatusRow key={s.id} site={s} />
-            ))}
-            <RecorderSummary />
-            <p className="mt-3 text-xs text-charcoal-400">
-              Three hydrophones monitor the restored, degraded, and reference sites in parallel.
-            </p>
-          </div>
-        </div>
-      </section>
+          <section className="grid gap-4 lg:grid-cols-2">
+            <div className="card p-5">
+              <div className="flex items-center gap-2"><TrendingUp className="h-5 w-5 text-forest-600" /><h2 className="section-title">Temporal momentum</h2></div>
+              <p className="mt-3 text-xl font-semibold text-charcoal-900">{temporal?.sufficient ? temporal.direction : 'Insufficient longitudinal evidence'}</p>
+              <p className="mt-1 text-sm text-charcoal-600">{temporal?.sufficient && temporal.slope_points_per_year != null ? `${temporal.slope_points_per_year.toFixed(2)} recovery-score points per year` : temporal?.message || 'At least three valid, chronologically dated restoration periods are required.'}</p>
+            </div>
+            <div className="card p-5">
+              <div className="flex items-center gap-2"><CircleAlert className="h-5 w-5 text-amber-600" /><h2 className="section-title">Warnings and limitations</h2></div>
+              <ul className="mt-3 space-y-2 text-sm text-charcoal-600">
+                {(summary.warnings.length ? summary.warnings : ['No pipeline warnings were recorded for this run.']).map((warning) => <li key={warning}>• {warning}</li>)}
+                <li>• Bootstrap bounds describe internal resampling variability, not causal certainty.</li>
+              </ul>
+            </div>
+          </section>
+        </>
+      )}
     </div>
   )
+}
+
+function ResultCard({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return <div className="card p-5"><p className="text-xs font-medium uppercase tracking-wide text-charcoal-400">{label}</p><p className="mt-2 text-2xl font-semibold text-charcoal-900">{value}</p><p className="mt-2 text-xs leading-relaxed text-charcoal-500">{detail}</p></div>
+}
+
+function EmptyState({ title, text, action, onClick }: { title: string; text: string; action: string; onClick: () => void }) {
+  return <div className="card p-10 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-forest-50 text-forest-700"><FolderOpen className="h-7 w-7" /></div><h2 className="mt-4 font-display text-xl font-semibold text-charcoal-900">{title}</h2><p className="mx-auto mt-2 max-w-xl text-sm text-charcoal-500">{text}</p><button onClick={onClick} className="mt-5 inline-flex items-center gap-2 rounded-lg bg-forest-700 px-4 py-2 text-sm font-medium text-white">{action}<Database className="h-4 w-4" /></button></div>
 }

@@ -124,7 +124,7 @@ def test_full_pipeline(integration_setup):
     # Valid recordings should produce features
     healthy_rec = next(r for r in result.recording_results if r.recording_id == "healthy_000")
     assert healthy_rec.ecoacoustic.aci is not None
-    assert healthy_rec.ecoacoustic.bi is not None
+    assert healthy_rec.ecoacoustic.biological_band_spectral_magnitude_ratio is not None
 
     # Reference profiles should be built
     assert "healthy" in result.reference_profiles

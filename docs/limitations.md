@@ -2,7 +2,7 @@
 
 ## Scientific limitations
 
-1. **Acoustic indices are not biodiversity measures.** ACI, BI, and other indices capture aspects of acoustic complexity but do not directly count species or measure total biodiversity.
+1. **Acoustic features are not biodiversity measures.** ACI, the Biological-Band Spectral Magnitude Ratio, and other features capture aspects of acoustic structure but do not directly count species or measure total biodiversity.
 
 2. **Recovery score is model-dependent.** The score depends on the selected features, scaling method, and distance metric. Different configurations may produce different scores for the same recordings.
 
@@ -26,16 +26,16 @@
 
 ## What is NOT implemented
 
-- Monitoring period temporal analysis page
 - Feature ablation experiments page
 - Negative controls (label shuffling, reference swap, noise-only)
 - Leaflet map view for sites
 - Provenance drawer in the UI
-- Full frontend integration with backend analysis results display
+- Manual quality-review controls in the streamlined project workspace
 - Speech detection (reviewer-assigned flag only)
 - Automated species identification
 
 ## Known issues
 
-- The frontend Soundscape workspace still uses localStorage for its internal state. Backend integration for the workspace is partial — the Projects page and API layer are ready, but the Soundscape Comparison workspace has not been fully rewired to fetch from the backend.
-- The demo dataset in the Soundscape workspace uses prototype illustrative data, not real analysis results from the Python pipeline.
+- Existing databases require a schema migration or a new clean database; Alembic migrations are not yet provided.
+- No licensed ecological demonstration audio is bundled. The live workspace never substitutes illustrative results when backend results are absent.
+- Legacy browser/import soundscape modules remain in the source tree for compatibility but are not imported by the production Overview or Soundscape routes.

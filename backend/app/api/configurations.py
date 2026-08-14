@@ -93,22 +93,7 @@ async def update_configuration(configuration_id: str, updates: AnalysisConfigUpd
 
     # Re-validate
     from app.schemas.schemas import AnalysisConfigCreate
-    config_data = AnalysisConfigCreate(
-        name=config.name, is_default=config.is_default,
-        target_sample_rate=config.target_sample_rate,
-        target_channel_mode=config.target_channel_mode,
-        clip_duration=config.clip_duration, start_offset=config.start_offset,
-        freq_min=config.freq_min, freq_max=config.freq_max,
-        fft_size=config.fft_size, window_size=config.window_size,
-        hop_length=config.hop_length, aci_freq_step=config.aci_freq_step,
-        aci_time_step=config.aci_time_step, bi_freq_min=config.bi_freq_min,
-        bi_freq_max=config.bi_freq_max, silence_threshold=config.silence_threshold,
-        clipping_threshold=config.clipping_threshold,
-        low_freq_noise_threshold=config.low_freq_noise_threshold,
-        normalisation_method=config.normalisation_method,
-        similarity_scaling_method=config.similarity_scaling_method,
-        random_seed=config.random_seed, software_version=config.software_version,
-    )
+    config_data = AnalysisConfigCreate.model_validate(config, from_attributes=True)
     warnings = validate_config(config_data)
 
     await db.commit()

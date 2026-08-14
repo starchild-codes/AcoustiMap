@@ -55,7 +55,7 @@ export function downloadCSV(recordings: Recording[], filename: string): void {
     'Peak amplitude',
     'Zero-crossing rate',
     'ACI',
-    'BI',
+    'Biological-Band Spectral Magnitude Ratio (×10)',
     'Occupancy',
     'Noise pressure',
     'Similarity',
@@ -176,7 +176,7 @@ export function generateComparisonReportHTML(
       <thead><tr><th>Metric</th><th>Healthy</th><th>Restored</th><th>Degraded</th></tr></thead>
       <tbody>
         ${metricRow('ACI', (r) => fmtMetric(r, 'aci'))}
-        ${metricRow('BI', (r) => fmtMetric(r, 'bi'))}
+        ${metricRow('Biological-Band Spectral Magnitude Ratio (×10)', (r) => fmtMetric(r, 'bi'))}
         ${metricRow('Biological freq. occupancy', (r) => fmtMetric(r, 'biologicalFrequencyOccupancy'))}
         ${metricRow('Anthropogenic noise pressure', (r) => fmtMetric(r, 'anthropogenicNoisePressure'))}
         ${metricRow('Spectral entropy', (r) => fmtMetric(r, 'spectralEntropy'))}

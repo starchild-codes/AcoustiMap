@@ -16,7 +16,7 @@ tests/analysis/
 ├── test_segmentation.py        — Segment creation, IDs, short segments, overlap
 ├── test_quality_metrics.py     — Silence/clipping/short detection, status suggestion
 ├── test_spectrograms.py        — PNG generation from real audio
-├── test_ecoacoustic_indices.py — ACI, BI, entropy, occupancy, NDSI, determinism
+├── test_ecoacoustic_indices.py — ACI, biological-band magnitude ratio, entropy, occupancy, NDSI, determinism
 ├── test_aggregation.py         — Median aggregation, fatal exclusion, modelling matrix
 ├── test_reference_model.py     — Scaling, centroids, insufficient data
 ├── test_recovery_score.py      — Score near 0/50/100, feature agreement

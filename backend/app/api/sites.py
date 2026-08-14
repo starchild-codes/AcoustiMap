@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.database.session import get_db
-from app.models.models import Site, Recording, SiteType
+from app.models.models import Site, Recording, SiteType, Project
 from app.schemas.schemas import SiteCreate, SiteUpdate, SiteResponse
 
 router = APIRouter(tags=["sites"])
@@ -18,6 +18,9 @@ async def list_sites(project_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/api/projects/{project_id}/sites", response_model=SiteResponse, status_code=201)
 async def create_site(project_id: str, site: SiteCreate, db: AsyncSession = Depends(get_db)):
+    project_result = await db.execute(select(Project.id).where(Project.id == project_id))
+    if project_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Project not found")
     db_site = Site(**site.model_dump(), project_id=project_id)
     db.add(db_site)
     await db.commit()

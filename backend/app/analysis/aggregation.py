@@ -159,7 +159,7 @@ def build_modelling_matrix(
         (matrix, feature_names, recording_ids, excluded_ids)
     """
     names = feature_names or [
-        "aci", "bi", "spectral_entropy", "temporal_entropy",
+        "aci", "biological_band_spectral_magnitude_ratio", "spectral_entropy", "temporal_entropy",
         "biological_band_occupancy", "ndsi", "anthropogenic_noise_pressure",
     ]
 

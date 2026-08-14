@@ -7,11 +7,11 @@ from app.analysis.bootstrap import run_bootstrap
 from app.analysis.exceptions import InsufficientReferenceDataError
 
 
-FEATURE_NAMES = ["aci", "bi", "spectral_entropy"]
+FEATURE_NAMES = ["aci", "biological_band_spectral_magnitude_ratio", "spectral_entropy"]
 
 
 def _features(aci, bi, entropy):
-    return {"aci": aci, "bi": bi, "spectral_entropy": entropy}
+    return {"aci": aci, "biological_band_spectral_magnitude_ratio": bi, "spectral_entropy": entropy}
 
 
 def test_fixed_seed_reproducible():

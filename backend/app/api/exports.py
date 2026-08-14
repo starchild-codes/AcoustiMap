@@ -61,7 +61,7 @@ async def export_recordings_csv(project_id: str, db: AsyncSession = Depends(get_
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Recording ID", "Filename", "Habitat", "Site", "Timestamp", "Duration", "Quality", "RMS", "Peak", "ACI", "BI", "Similarity", "Metric Source"])
+    writer.writerow(["Recording ID", "Filename", "Habitat", "Site", "Timestamp", "Duration", "Quality", "RMS", "Peak", "ACI", "Biological-Band Spectral Magnitude Ratio (×10)", "Recovery Position", "Metric Source"])
 
     for r in recordings:
         a = analyses_map.get(r.id)
@@ -70,9 +70,10 @@ async def export_recordings_csv(project_id: str, db: AsyncSession = Depends(get_
         comp = a.comparison if a else {}
         writer.writerow([
             r.id, r.filename, r.habitat_category.value, r.site_id or "", r.timestamp or "",
-            tech.get("duration", ""), tech.get("rms_amplitude", ""), tech.get("peak_amplitude", ""),
-            eco.get("aci", ""), eco.get("bi", ""),
-            comp.get("healthy_reference_similarity", ""),
+            tech.get("duration", ""), (a.quality_info.get("status", "") if a else ""),
+            tech.get("rms_amplitude", ""), tech.get("peak_amplitude", ""),
+            eco.get("aci", ""), eco.get("biological_band_spectral_magnitude_ratio", ""),
+            comp.get("recovery_position", ""),
             "python" if a else "none",
         ])
 

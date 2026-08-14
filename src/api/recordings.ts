@@ -22,7 +22,7 @@ export interface Recording {
 export interface RecordingUpdate {
   habitat_category?: 'restored' | 'degraded' | 'healthy'
   site_id?: string | null
-  timestamp?: string
+  timestamp?: string | null
   monitoring_period?: string
   recorder_id?: string
   notes?: string
@@ -67,4 +67,9 @@ export async function updateRecording(id: string, data: RecordingUpdate): Promis
 
 export async function deleteRecording(id: string): Promise<void> {
   return apiRequest<void>(`/api/recordings/${id}`, { method: 'DELETE' })
+}
+
+export function recordingAudioUrl(id: string): string {
+  const base = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001'
+  return `${base}/api/recordings/${id}/audio`
 }

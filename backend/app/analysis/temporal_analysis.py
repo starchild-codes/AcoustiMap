@@ -1,117 +1,167 @@
-"""
-Temporal analysis: recovery momentum across monitoring periods.
+"""Chronological recovery momentum using robust elapsed-time slopes."""
 
-Uses Theil–Sen slope for robust trend estimation.
-Only calculates momentum when sufficient longitudinal data exist.
-"""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
 
 import numpy as np
-from typing import Any
-import logging
 
-logger = logging.getLogger(__name__)
+DAYS_PER_YEAR = 365.2425
 
 
 def theil_sen_slope(x: np.ndarray, y: np.ndarray) -> tuple[float | None, float | None]:
-    """
-    Compute the Theil–Sen slope (median of pairwise slopes).
-
-    Returns: (slope, intercept) or (None, None) if insufficient data.
-    """
-    n = len(x)
-    if n < 3:
+    """Return the median pairwise slope and a median-based intercept."""
+    if len(x) < 3 or len(y) != len(x):
         return None, None
-
-    slopes = []
-    for i in range(n):
-        for j in range(i + 1, n):
-            dx = x[j] - x[i]
-            if dx != 0:
-                slopes.append((y[j] - y[i]) / dx)
-
+    slopes = [
+        (y[j] - y[i]) / (x[j] - x[i])
+        for i in range(len(x))
+        for j in range(i + 1, len(x))
+        if x[j] != x[i]
+    ]
     if not slopes:
         return None, None
-
     slope = float(np.median(slopes))
-    intercept = float(np.median(y) - slope * np.median(x))
+    intercept = float(np.median(y - slope * x))
     return slope, intercept
 
 
+def _parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def _direction(slope: float, stable: float, strong: float) -> str:
+    if slope > strong:
+        return "Improving"
+    if slope > stable:
+        return "Weakly improving"
+    if slope < -strong:
+        return "Declining"
+    if slope < -stable:
+        return "Weakly declining"
+    return "Stable"
+
+
 def calculate_temporal_analysis(
-    period_scores: dict[str, list[float]],
-    period_order: list[str],
+    period_observations: dict[str, list[tuple[float, str | None]]],
     min_periods: int = 3,
     min_recordings_per_period: int = 1,
-) -> dict[str, Any] | None:
+    stable_threshold_per_year: float = 1.0,
+    strong_threshold_per_year: float = 5.0,
+    bootstrap_iterations: int = 500,
+    random_seed: int = 42,
+) -> dict[str, Any]:
+    """Estimate momentum from dated period medians.
+
+    Each period is positioned at the median valid recording timestamp. Periods
+    are sorted by that timestamp and the Theil–Sen slope is calculated against
+    actual elapsed years, so irregular sampling intervals are retained.
     """
-    Calculate recovery momentum across monitoring periods.
+    period_rows: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    missing_date_count = 0
 
-    Args:
-        period_scores: Dict of period name → list of recovery scores.
-        period_order: Ordered list of period names.
-        min_periods: Minimum number of valid periods required.
-        min_recordings_per_period: Minimum recordings per period.
+    for period, observations in period_observations.items():
+        valid = [(float(score), _parse_timestamp(timestamp)) for score, timestamp in observations]
+        missing_date_count += sum(timestamp is None for _, timestamp in valid)
+        dated = [(score, timestamp) for score, timestamp in valid if timestamp is not None]
+        if len(dated) < min_recordings_per_period:
+            continue
+        timestamps = np.array([timestamp.timestamp() for _, timestamp in dated], dtype=float)
+        representative = datetime.fromtimestamp(float(np.median(timestamps)), tz=timezone.utc)
+        period_rows.append({
+            "period": period,
+            "date": representative.isoformat(),
+            "timestamp": representative.timestamp(),
+            "scores": [score for score, _ in dated],
+            "recording_count": len(dated),
+            "median_score": float(np.median([score for score, _ in dated])),
+        })
 
-    Returns:
-        Temporal analysis dict or None if insufficient data.
-    """
-    # Filter to periods with data, in the specified order
-    valid_periods = []
-    valid_scores = []
-    valid_counts = []
+    period_rows.sort(key=lambda row: row["timestamp"])
+    if missing_date_count:
+        warnings.append(f"{missing_date_count} restoration score(s) without a valid timezone-aware timestamp were excluded from temporal analysis.")
 
-    for period in period_order:
-        scores = period_scores.get(period, [])
-        if len(scores) >= min_recordings_per_period:
-            valid_periods.append(period)
-            valid_scores.append(float(np.median(scores)))
-            valid_counts.append(len(scores))
-
-    if len(valid_periods) < min_periods:
+    public_periods = [
+        {
+            "period": row["period"],
+            "date": row["date"],
+            "recording_count": row["recording_count"],
+            "median_score": row["median_score"],
+        }
+        for row in period_rows
+    ]
+    if len(period_rows) < min_periods:
         return {
             "sufficient": False,
             "message": "Insufficient longitudinal evidence to estimate recovery momentum.",
-            "valid_periods": len(valid_periods),
+            "valid_periods": len(period_rows),
             "required_periods": min_periods,
+            "periods": public_periods,
+            "warnings": warnings,
         }
 
-    x = np.arange(len(valid_periods), dtype=float)
-    y = np.array(valid_scores)
-
-    slope, intercept = theil_sen_slope(x, y)
-
-    if slope is None:
+    first_timestamp = period_rows[0]["timestamp"]
+    elapsed_years = np.array(
+        [(row["timestamp"] - first_timestamp) / 86400.0 / DAYS_PER_YEAR for row in period_rows],
+        dtype=float,
+    )
+    median_scores = np.array([row["median_score"] for row in period_rows], dtype=float)
+    slope, intercept = theil_sen_slope(elapsed_years, median_scores)
+    if slope is None or intercept is None:
         return {
             "sufficient": False,
-            "message": "Could not compute trend slope.",
-            "valid_periods": len(valid_periods),
+            "message": "Valid monitoring periods do not span enough distinct dates to estimate momentum.",
+            "valid_periods": len(period_rows),
+            "required_periods": min_periods,
+            "periods": public_periods,
+            "warnings": warnings,
         }
 
-    # Direction labels
-    if slope > 2:
-        direction = "Improving"
-    elif slope > 0.5:
-        direction = "Weakly improving"
-    elif slope > -0.5:
-        direction = "Stable"
-    elif slope > -2:
-        direction = "Weakly declining"
-    else:
-        direction = "Declining"
+    rng = np.random.default_rng(random_seed)
+    bootstrap_slopes: list[float] = []
+    for _ in range(bootstrap_iterations):
+        resampled_medians = np.array([
+            float(np.median(rng.choice(row["scores"], size=len(row["scores"]), replace=True)))
+            for row in period_rows
+        ])
+        bootstrap_slope, _ = theil_sen_slope(elapsed_years, resampled_medians)
+        if bootstrap_slope is not None and np.isfinite(bootstrap_slope):
+            bootstrap_slopes.append(float(bootstrap_slope))
 
-    # Fitted values
-    fitted = [float(slope * xi + intercept) for xi in x]
+    ci_low = float(np.percentile(bootstrap_slopes, 2.5)) if bootstrap_slopes else None
+    ci_high = float(np.percentile(bootstrap_slopes, 97.5)) if bootstrap_slopes else None
+    direction = _direction(slope, stable_threshold_per_year, strong_threshold_per_year)
+    fitted = [float(slope * elapsed + intercept) for elapsed in elapsed_years]
 
     return {
         "sufficient": True,
         "direction": direction,
-        "slope": slope,
+        "slope_points_per_year": slope,
+        "slope_points_per_month": slope / 12.0,
+        "slope_ci_95_per_year": [ci_low, ci_high] if ci_low is not None else None,
         "intercept": intercept,
-        "num_periods": len(valid_periods),
-        "periods": valid_periods,
-        "median_scores": valid_scores,
-        "recording_counts": valid_counts,
+        "num_periods": len(period_rows),
+        "periods": public_periods,
+        "elapsed_years": elapsed_years.tolist(),
         "fitted_values": fitted,
-        "message": f"Recovery momentum: {direction} (slope = {slope:.2f} points per period).",
-        "warning": "Theil–Sen slope is a robust trend estimate, not a causal inference.",
+        "bootstrap_requested_iterations": bootstrap_iterations,
+        "bootstrap_successful_iterations": len(bootstrap_slopes),
+        "random_seed": random_seed,
+        "direction_thresholds_points_per_year": {
+            "stable_absolute_max": stable_threshold_per_year,
+            "strong_direction_min": strong_threshold_per_year,
+            "status": "configurable prototype defaults; not externally calibrated",
+        },
+        "message": f"Recovery momentum: {direction} ({slope:.2f} recovery-score points per year).",
+        "warnings": warnings + ["Theil–Sen slope and its internal bootstrap interval are acoustic trend evidence, not causal inference."],
     }

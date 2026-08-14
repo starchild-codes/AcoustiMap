@@ -56,7 +56,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     if (contentType.includes('application/json')) {
       const data = await response.json()
       if (!response.ok) {
-        throw new ApiError(response.status, data.detail || 'Request failed', data.field)
+        const detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || { message: 'Request failed' })
+        throw new ApiError(response.status, detail, data.field)
       }
       return data as T
     }
@@ -91,7 +92,17 @@ export async function uploadFile<T>(
 }
 
 export async function downloadBlob(path: string, signal?: AbortSignal): Promise<Blob> {
-  return request<Blob>(path, { signal })
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, { signal })
+    if (!response.ok) {
+      const detail = await response.text()
+      throw new ApiError(response.status, detail || 'Download failed')
+    }
+    return await response.blob()
+  } catch (err) {
+    if (err instanceof ApiError) throw err
+    throw new ApiError(0, 'Network error while downloading export')
+  }
 }
 
 export { request as apiRequest, API_BASE_URL }

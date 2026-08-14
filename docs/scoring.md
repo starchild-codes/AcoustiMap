@@ -28,7 +28,7 @@ Default: standard
 ## Features used
 
 Default feature set:
-- aci, bi, spectral_entropy, temporal_entropy
+- aci, biological_band_spectral_magnitude_ratio, spectral_entropy, temporal_entropy
 - frequency_band_occupancy, acoustic_diversity_index
 - acoustic_evenness_index, ndsi
 

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Default ecological features used for modelling
 DEFAULT_FEATURE_NAMES = [
-    "aci", "bi", "spectral_entropy", "temporal_entropy",
+    "aci", "biological_band_spectral_magnitude_ratio", "spectral_entropy", "temporal_entropy",
     "biological_band_occupancy", "ndsi", "anthropogenic_noise_pressure",
 ]
 
@@ -191,7 +191,7 @@ def suggest_quality_status(flags: list[QualityFlag]) -> tuple[str, str]:
         return "failed", "Fatal quality flag detected"
     if len(exclude) >= 2:
         return "exclude_recommended", "Multiple exclude-recommended flags"
-    if len(exclude) >= 1 or len(review) >= 2:
+    if len(exclude) >= 1 or len(review) >= 1:
         return "review", "Quality flags require review"
     return "valid", "No significant quality issues"
 
@@ -230,7 +230,7 @@ def process_segment(
 
     # Build EcoacousticFeatures, filtering out non-schema keys
     eco_schema_keys = {
-        "aci", "aci_by_band", "bi", "spectral_entropy", "temporal_entropy",
+        "aci", "aci_by_band", "biological_band_spectral_magnitude_ratio", "spectral_entropy", "temporal_entropy",
         "biological_band_occupancy", "ndsi", "anthropogenic_noise_pressure",
         "biophony_energy", "anthrophony_energy", "adi", "aei",
     }

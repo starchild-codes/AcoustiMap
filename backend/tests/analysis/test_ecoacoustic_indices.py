@@ -4,7 +4,7 @@ import pytest
 import numpy as np
 
 from app.analysis.ecoacoustic_indices import (
-    compute_stft, calculate_aci, calculate_bi, calculate_spectral_entropy,
+    compute_stft, calculate_aci, calculate_biological_band_spectral_magnitude_ratio, calculate_spectral_entropy,
     calculate_temporal_entropy, calculate_biological_band_occupancy,
     calculate_ndsi, calculate_adi, calculate_aei,
     calculate_all_ecoacoustic_features,
@@ -38,8 +38,8 @@ def test_2000hz_more_biological_energy_than_200hz(sr, n_fft, hop):
     S_2k = compute_stft(audio_2k, sr, n_fft, hop)
     S_200 = compute_stft(audio_200, sr, n_fft, hop)
 
-    bi_2k, _ = calculate_bi(S_2k, sr, n_fft, bi_min_hz=1000, bi_max_hz=10000)
-    bi_200, _ = calculate_bi(S_200, sr, n_fft, bi_min_hz=1000, bi_max_hz=10000)
+    bi_2k, _ = calculate_biological_band_spectral_magnitude_ratio(S_2k, sr, n_fft, biological_band_min_hz=1000, biological_band_max_hz=10000)
+    bi_200, _ = calculate_biological_band_spectral_magnitude_ratio(S_200, sr, n_fft, biological_band_min_hz=1000, biological_band_max_hz=10000)
 
     assert bi_2k is not None
     assert bi_200 is not None
@@ -66,7 +66,7 @@ def test_silence_low_bi(sr, n_fft, hop):
     """Silence yields a very low or zero BI."""
     audio = generate_silence(10, sr)
     S = compute_stft(audio, sr, n_fft, hop)
-    bi, err = calculate_bi(S, sr, n_fft, bi_min_hz=1000, bi_max_hz=10000)
+    bi, err = calculate_biological_band_spectral_magnitude_ratio(S, sr, n_fft, biological_band_min_hz=1000, biological_band_max_hz=10000)
     assert bi is not None
     assert bi < 0.01  # Very low for silence
 
@@ -124,7 +124,7 @@ def test_all_features_deterministic(sr, n_fft, hop):
     features1 = calculate_all_ecoacoustic_features(S, audio, sr, n_fft, hop, {})
     features2 = calculate_all_ecoacoustic_features(S, audio, sr, n_fft, hop, {})
 
-    for key in ["aci", "bi", "spectral_entropy", "temporal_entropy",
+    for key in ["aci", "biological_band_spectral_magnitude_ratio", "spectral_entropy", "temporal_entropy",
                 "biological_band_occupancy", "ndsi"]:
         v1 = features1.get(key)
         v2 = features2.get(key)
@@ -142,10 +142,10 @@ def test_aci_silence_returns_none_or_zero(sr, n_fft, hop):
 
 
 def test_temporal_entropy_tone_vs_noise(sr):
-    """Temporal entropy: noise has higher entropy than a pure tone.
+    """Temporal entropy is highest for a temporally even envelope.
 
-    A pure sine wave has a constant Hilbert envelope (zero entropy after
-    normalisation), while white noise has a varying envelope."""
+    A pure sine wave has a constant Hilbert envelope, while white noise has a
+    varying envelope."""
     tone = generate_sine_wave(1000, 10, sr, amplitude=0.5)
     noise = generate_white_noise(10, sr, seed=42)
 
@@ -157,4 +157,6 @@ def test_temporal_entropy_tone_vs_noise(sr):
     # A pure tone's Hilbert envelope is constant → entropy is 0 or very low
     # If tone entropy is None (zero energy), just check noise > 0
     if ent_tone is not None:
-        assert ent_noise > ent_tone
+        # A constant tone envelope is more temporally even and therefore has
+        # higher normalized Shannon entropy than the varying noise envelope.
+        assert ent_tone > ent_noise

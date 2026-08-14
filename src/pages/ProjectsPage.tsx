@@ -6,9 +6,11 @@ import type { PageId } from '../components/Sidebar'
 
 interface ProjectsPageProps {
   onNavigate: (id: PageId) => void
+  onOpenProject: (projectId: string) => void
 }
 
-export default function ProjectsPage({ onNavigate }: ProjectsPageProps) {
+export default function ProjectsPage({ onNavigate, onOpenProject }: ProjectsPageProps) {
+  void onNavigate
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -232,7 +234,7 @@ export default function ProjectsPage({ onNavigate }: ProjectsPageProps) {
 
               <div className="flex items-center gap-1 mt-auto pt-2 border-t border-charcoal-50">
                 <button
-                  onClick={() => onNavigate('soundscape')}
+                  onClick={() => onOpenProject(p.id)}
                   className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-forest-700 hover:bg-forest-50 transition-colors"
                 >
                   Open <ArrowRight className="h-3 w-3" />

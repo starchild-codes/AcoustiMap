@@ -17,7 +17,7 @@ def _make_segment_result(seg_id: str, aci=0.5, bi=5.0, valid=True, fatal=False) 
         segment_info=SegmentInfo(segment_id=seg_id, index=0, start_time=0, end_time=30,
                                   duration=30, sample_count=22050*30, is_valid=valid),
         technical=TechnicalFeatures(duration=30.0, rms_amplitude=0.1),
-        ecoacoustic=EcoacousticFeatures(aci=aci, bi=bi),
+        ecoacoustic=EcoacousticFeatures(aci=aci, biological_band_spectral_magnitude_ratio=bi),
         quality_flags=flags,
     )
 
@@ -57,14 +57,14 @@ def test_modelling_matrix_drops_missing_features():
     recs = [
         RecordingResult(recording_id="r1", quality_status="valid",
                        technical=TechnicalFeatures(),
-                       ecoacoustic=EcoacousticFeatures(aci=0.5, bi=None, spectral_entropy=0.7)),
+                       ecoacoustic=EcoacousticFeatures(aci=0.5, biological_band_spectral_magnitude_ratio=None, spectral_entropy=0.7)),
         RecordingResult(recording_id="r2", quality_status="valid",
                        technical=TechnicalFeatures(),
-                       ecoacoustic=EcoacousticFeatures(aci=0.6, bi=None, spectral_entropy=0.8)),
+                       ecoacoustic=EcoacousticFeatures(aci=0.6, biological_band_spectral_magnitude_ratio=None, spectral_entropy=0.8)),
     ]
-    matrix, features, rec_ids, excluded = build_modelling_matrix(recs, ["aci", "bi", "spectral_entropy"])
+    matrix, features, rec_ids, excluded = build_modelling_matrix(recs, ["aci", "biological_band_spectral_magnitude_ratio", "spectral_entropy"])
     assert matrix is not None
-    assert "bi" not in features  # Dropped because all None
+    assert "biological_band_spectral_magnitude_ratio" not in features  # Dropped because all None
     assert "aci" in features
     assert "spectral_entropy" in features
     assert matrix.shape[1] == 2  # Only aci and spectral_entropy

@@ -13,17 +13,19 @@ Recovery momentum is calculated **only** when genuine monitoring-period metadata
 
 ### Method
 
-Uses the **Theil–Sen slope** (median of pairwise slopes) for robust trend estimation.
+Uses the **Theil–Sen slope** (median of pairwise slopes) against actual elapsed years. Periods are ordered by valid recording timestamps, not labels; each period uses its median valid recording timestamp.
 
 ### Direction labels
 
-| Slope range | Direction |
+| Slope in recovery-score points/year | Direction |
 |-------------|----------|
-| > 2 | Improving |
-| > 0.5 | Weakly improving |
-| -0.5 to 0.5 | Stable |
-| < -0.5 | Weakly declining |
-| < -2 | Declining |
+| > 5 | Improving |
+| > 1 | Weakly improving |
+| -1 to 1 | Stable |
+| < -1 | Weakly declining |
+| < -5 | Declining |
+
+These are configurable prototype defaults, not externally calibrated ecological thresholds. A within-period bootstrap reports an internal 95% slope interval when sufficient dated data exist.
 
 ### Insufficient data
 
@@ -35,7 +37,7 @@ No illustrative line is created when real project data exists.
 
 ## Output
 
-- Slope per monitoring period
+- Slope per year and per month using actual elapsed dates
 - Direction label
 - Number of periods
 - Fitted values

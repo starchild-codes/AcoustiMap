@@ -45,9 +45,9 @@ class AnalysisConfig(BaseModel):
     aci_frequency_step_hz: float = Field(default=1000.0, gt=0)
     aci_time_step_seconds: float = Field(default=5.0, gt=0)
 
-    # BI parameters
-    bi_min_hz: float = Field(default=1000.0, ge=0)
-    bi_max_hz: float = Field(default=10000.0, gt=0)
+    # Biological-band spectral magnitude ratio parameters
+    biological_band_min_hz: float = Field(default=1000.0, ge=0)
+    biological_band_max_hz: float = Field(default=10000.0, gt=0)
 
     # NDSI / noise proxy bands
     biophony_min_hz: float = Field(default=1000.0, ge=0)
@@ -66,6 +66,9 @@ class AnalysisConfig(BaseModel):
 
     # Bootstrap
     bootstrap_iterations: int = Field(default=500, ge=0)
+    temporal_bootstrap_iterations: int = Field(default=500, ge=0, le=2000)
+    temporal_stable_threshold_per_year: float = Field(default=1.0, ge=0)
+    temporal_strong_threshold_per_year: float = Field(default=5.0, ge=0)
     random_seed: int = Field(default=42, ge=0)
 
     # Metadata
@@ -95,8 +98,8 @@ class AnalysisConfig(BaseModel):
                 f"frequency_max_hz ({self.frequency_max_hz})"
             )
 
-        if self.bi_min_hz >= self.bi_max_hz:
-            raise ValueError(f"bi_min_hz ({self.bi_min_hz}) must be below bi_max_hz ({self.bi_max_hz})")
+        if self.biological_band_min_hz >= self.biological_band_max_hz:
+            raise ValueError("biological_band_min_hz must be below biological_band_max_hz")
 
         if self.biophony_min_hz >= self.biophony_max_hz:
             raise ValueError(
@@ -121,6 +124,9 @@ class AnalysisConfig(BaseModel):
         # Valid distance metric
         if self.distance_metric not in ("euclidean", "cosine"):
             raise ValueError(f"Invalid distance_metric: {self.distance_metric}")
+
+        if self.temporal_strong_threshold_per_year < self.temporal_stable_threshold_per_year:
+            raise ValueError("temporal_strong_threshold_per_year must be at least the stable threshold")
 
         # FFT size should be power of 2 for efficiency
         if self.n_fft & (self.n_fft - 1) != 0:

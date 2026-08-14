@@ -9,13 +9,13 @@ from app.analysis.exceptions import InsufficientReferenceDataError
 
 def _features(aci, bi, entropy, occupancy, ndsi, noise):
     return {
-        "aci": aci, "bi": bi, "spectral_entropy": entropy,
+        "aci": aci, "biological_band_spectral_magnitude_ratio": bi, "spectral_entropy": entropy,
         "biological_band_occupancy": occupancy,
         "ndsi": ndsi, "anthropogenic_noise_pressure": noise,
     }
 
 
-FEATURE_NAMES = ["aci", "bi", "spectral_entropy", "biological_band_occupancy", "ndsi", "anthropogenic_noise_pressure"]
+FEATURE_NAMES = ["aci", "biological_band_spectral_magnitude_ratio", "spectral_entropy", "biological_band_occupancy", "ndsi", "anthropogenic_noise_pressure"]
 
 
 def test_extract_feature_vector():

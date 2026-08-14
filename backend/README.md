@@ -54,7 +54,7 @@ backend/
 All metrics use documented formulas:
 
 - **ACI** (Acoustic Complexity Index): Pieretti et al. 2011
-- **BI** (Bioacoustic Index): Boelman et al. 2007
+- **Biological-Band Spectral Magnitude Ratio (×10)**: configured-band linear STFT magnitude ratio; not the canonical Bioacoustic Index
 - **Spectral entropy**: Shannon entropy of normalized power spectrum
 - **Temporal entropy**: Shannon entropy of Hilbert envelope
 - **ADI** (Acoustic Diversity Index): Pijanowski et al. 2011

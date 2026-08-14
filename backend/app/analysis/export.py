@@ -102,7 +102,7 @@ def _write_recording_features_csv(result: ProjectAnalysisResult, path: Path) -> 
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["recording_id", "quality_status", "duration", "rms", "peak", "zcr",
-                         "aci", "bi", "spectral_entropy", "temporal_entropy",
+                         "aci", "biological_band_spectral_magnitude_ratio", "spectral_entropy", "temporal_entropy",
                          "occupancy", "ndsi", "noise_pressure",
                          "valid_segments", "failed_segments"])
         for rec in result.recording_results:
@@ -110,7 +110,7 @@ def _write_recording_features_csv(result: ProjectAnalysisResult, path: Path) -> 
                 rec.recording_id, rec.quality_status,
                 rec.technical.duration, rec.technical.rms_amplitude,
                 rec.technical.peak_amplitude, rec.technical.zero_crossing_rate,
-                rec.ecoacoustic.aci, rec.ecoacoustic.bi,
+                rec.ecoacoustic.aci, rec.ecoacoustic.biological_band_spectral_magnitude_ratio,
                 rec.ecoacoustic.spectral_entropy, rec.ecoacoustic.temporal_entropy,
                 rec.ecoacoustic.biological_band_occupancy,
                 rec.ecoacoustic.ndsi, rec.ecoacoustic.anthropogenic_noise_pressure,
@@ -122,7 +122,7 @@ def _write_segment_features_csv(result: ProjectAnalysisResult, path: Path) -> No
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["segment_id", "recording_id", "index", "start_time", "end_time",
-                         "duration", "is_valid", "aci", "bi", "spectral_entropy",
+                         "duration", "is_valid", "aci", "biological_band_spectral_magnitude_ratio", "spectral_entropy",
                          "temporal_entropy", "occupancy", "ndsi"])
         for rec in result.recording_results:
             for seg in rec.segment_results:
@@ -130,7 +130,7 @@ def _write_segment_features_csv(result: ProjectAnalysisResult, path: Path) -> No
                     seg.segment_id, rec.recording_id, seg.segment_info.index,
                     seg.segment_info.start_time, seg.segment_info.end_time,
                     seg.segment_info.duration, seg.segment_info.is_valid,
-                    seg.ecoacoustic.aci, seg.ecoacoustic.bi,
+                    seg.ecoacoustic.aci, seg.ecoacoustic.biological_band_spectral_magnitude_ratio,
                     seg.ecoacoustic.spectral_entropy, seg.ecoacoustic.temporal_entropy,
                     seg.ecoacoustic.biological_band_occupancy, seg.ecoacoustic.ndsi,
                 ])

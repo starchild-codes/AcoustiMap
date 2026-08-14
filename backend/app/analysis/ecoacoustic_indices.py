@@ -104,28 +104,29 @@ def calculate_aci(
     return float(aci_total / aci_denominator), aci_by_band, None
 
 
-def calculate_bi(
+def calculate_biological_band_spectral_magnitude_ratio(
     S: np.ndarray,
     sample_rate: int,
     n_fft: int,
-    bi_min_hz: float = 1000.0,
-    bi_max_hz: float = 10000.0,
+    biological_band_min_hz: float = 1000.0,
+    biological_band_max_hz: float = 10000.0,
 ) -> tuple[float | None, str | None]:
     """
-    Bioacoustic Index (Boelman et al. 2007).
+    Biological-Band Spectral Magnitude Ratio (×10).
 
-    BI = sum of spectral energy in the biological band (bi_min_hz to bi_max_hz),
-    divided by total spectral energy, scaled to a 0-10 range.
+    Sum of linear STFT magnitudes in the configured biological band divided by
+    total linear STFT magnitude, scaled to a 0-10 range. This is not the
+    canonical Bioacoustic Index.
 
     Returns:
         (bi_value, error_message)
     """
     bin_width = sample_rate / n_fft
-    low_bin = max(1, int(bi_min_hz / bin_width))
-    high_bin = min(S.shape[0], int(bi_max_hz / bin_width))
+    low_bin = max(1, int(biological_band_min_hz / bin_width))
+    high_bin = min(S.shape[0], int(biological_band_max_hz / bin_width))
 
     if high_bin <= low_bin:
-        return None, "Empty BI frequency band."
+        return None, "Empty biological-band frequency range."
 
     bio_band = S[low_bin:high_bin, :]
     total_energy = np.sum(S)
@@ -428,15 +429,15 @@ def calculate_all_ecoacoustic_features(
     if aci_err:
         errors.append(f"ACI: {aci_err}")
 
-    # BI
-    bi, bi_err = calculate_bi(
+    # Biological-Band Spectral Magnitude Ratio (×10)
+    magnitude_ratio, ratio_err = calculate_biological_band_spectral_magnitude_ratio(
         S, sample_rate, n_fft,
-        bi_min_hz=cfg.get("bi_min_hz", 1000.0),
-        bi_max_hz=cfg.get("bi_max_hz", 10000.0),
+        biological_band_min_hz=cfg.get("biological_band_min_hz", 1000.0),
+        biological_band_max_hz=cfg.get("biological_band_max_hz", 10000.0),
     )
-    features["bi"] = bi
-    if bi_err:
-        errors.append(f"BI: {bi_err}")
+    features["biological_band_spectral_magnitude_ratio"] = magnitude_ratio
+    if ratio_err:
+        errors.append(f"Biological-band spectral magnitude ratio: {ratio_err}")
 
     # Spectral entropy
     features["spectral_entropy"] = calculate_spectral_entropy(S)

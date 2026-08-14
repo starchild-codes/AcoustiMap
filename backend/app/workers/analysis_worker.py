@@ -8,6 +8,8 @@ Progress reflects actual completed processing steps, not a timer.
 import asyncio
 import os
 import time
+import threading
+import statistics
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,16 +18,57 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import async_session, init_db
 from app.models.models import (
-    AnalysisJob, Recording, AnalysisConfig,
+    AnalysisJob, Recording, AnalysisConfig as AnalysisConfigModel,
     JobState, RecordingAnalysis, QualityFlag, ProjectSummary, ManualReview,
 )
-from app.analysis.config import AnalysisConfig
+from app.analysis.config import AnalysisConfig as PipelineAnalysisConfig
 from app.analysis.pipeline import run_project_analysis
+from app.analysis.exceptions import AnalysisCancelledError
 from app.core.config import settings
 
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def build_pipeline_config(config: AnalysisConfigModel) -> PipelineAnalysisConfig:
+    """Map the persisted configuration to the exact executable configuration."""
+    return PipelineAnalysisConfig(
+        target_sample_rate=config.target_sample_rate,
+        channel_mode=config.target_channel_mode,
+        segment_duration_seconds=config.clip_duration if config.clip_duration > 0 else 30.0,
+        minimum_valid_duration_seconds=5.0,
+        frequency_min_hz=config.freq_min,
+        frequency_max_hz=config.freq_max,
+        n_fft=config.fft_size,
+        hop_length=config.hop_length,
+        window="hann",
+        amplitude_normalization=config.normalisation_method,
+        remove_dc_offset=True,
+        silence_rms_threshold_dbfs=-50.0,
+        clipping_amplitude_threshold=config.clipping_threshold,
+        clipping_proportion_warning=0.001,
+        silence_proportion_warning=0.50,
+        low_frequency_cutoff_hz=300.0,
+        low_frequency_noise_warning=config.low_freq_noise_threshold,
+        aci_frequency_step_hz=config.aci_freq_step,
+        aci_time_step_seconds=config.aci_time_step,
+        biological_band_min_hz=config.biological_band_min_hz,
+        biological_band_max_hz=config.biological_band_max_hz,
+        biophony_min_hz=config.biological_band_min_hz,
+        biophony_max_hz=config.biological_band_max_hz,
+        anthrophony_min_hz=100.0,
+        anthrophony_max_hz=1000.0,
+        reference_scaling=config.similarity_scaling_method,
+        distance_metric="euclidean",
+        minimum_recordings_per_reference_group=3,
+        bootstrap_iterations=config.bootstrap_iterations,
+        temporal_bootstrap_iterations=config.temporal_bootstrap_iterations,
+        temporal_stable_threshold_per_year=config.temporal_stable_threshold_per_year,
+        temporal_strong_threshold_per_year=config.temporal_strong_threshold_per_year,
+        random_seed=config.random_seed,
+        software_version=config.software_version,
+    )
 
 
 async def process_job(job_id: str):
@@ -37,7 +80,7 @@ async def process_job(job_id: str):
             return
 
         # Get config
-        config_result = await db.execute(select(AnalysisConfig).where(AnalysisConfig.id == job.config_id))
+        config_result = await db.execute(select(AnalysisConfigModel).where(AnalysisConfigModel.id == job.config_id))
         config = config_result.scalar_one_or_none()
         if not config:
             job.state = JobState.failed
@@ -45,46 +88,24 @@ async def process_job(job_id: str):
             await db.commit()
             return
 
-        # Build AnalysisConfig from DB config
-        analysis_config = AnalysisConfig(
-            target_sample_rate=config.target_sample_rate,
-            channel_mode=config.target_channel_mode,
-            segment_duration_seconds=config.clip_duration if config.clip_duration > 0 else 30.0,
-            minimum_valid_duration_seconds=5.0,
-            frequency_min_hz=config.freq_min,
-            frequency_max_hz=config.freq_max,
-            n_fft=config.fft_size,
-            hop_length=config.hop_length,
-            window="hann",
-            amplitude_normalization=config.normalisation_method,
-            remove_dc_offset=True,
-            silence_rms_threshold_dbfs=-50.0,
-            clipping_amplitude_threshold=config.clipping_threshold,
-            clipping_proportion_warning=0.001,
-            silence_proportion_warning=0.50,
-            low_frequency_cutoff_hz=300.0,
-            low_frequency_noise_warning=config.low_freq_noise_threshold,
-            aci_frequency_step_hz=config.aci_freq_step,
-            aci_time_step_seconds=config.aci_time_step,
-            bi_min_hz=config.bi_freq_min,
-            bi_max_hz=config.bi_freq_max,
-            biophony_min_hz=config.bi_freq_min,
-            biophony_max_hz=config.bi_freq_max,
-            anthrophony_min_hz=100.0,
-            anthrophony_max_hz=1000.0,
-            reference_scaling=config.similarity_scaling_method,
-            distance_metric="euclidean",
-            minimum_recordings_per_reference_group=3,
-            bootstrap_iterations=min(config.random_seed and 100 or 100, 100),
-            random_seed=config.random_seed,
-            software_version=config.software_version,
-        )
+        analysis_config = build_pipeline_config(config)
 
         # Get recordings
-        rec_result = await db.execute(
-            select(Recording).where(Recording.project_id == job.project_id)
-        )
+        recording_query = select(Recording).where(Recording.project_id == job.project_id)
+        if job.recording_ids:
+            recording_query = recording_query.where(Recording.id.in_(job.recording_ids))
+        rec_result = await db.execute(recording_query)
         recordings_db = rec_result.scalars().all()
+
+        if job.recording_ids:
+            found_ids = {recording.id for recording in recordings_db}
+            missing_ids = sorted(set(job.recording_ids) - found_ids)
+            if missing_ids:
+                job.state = JobState.failed
+                job.error_summary = f"Requested recordings are unavailable: {', '.join(missing_ids)}"
+                job.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+                return
 
         job.total_recordings = len(recordings_db)
         job.state = JobState.preparing
@@ -94,9 +115,11 @@ async def process_job(job_id: str):
 
         # Build recording metadata for pipeline
         recordings_meta = []
+        inaccessible = []
         for rec in recordings_db:
             if not os.path.exists(rec.storage_path):
                 logger.warning("File not found: %s", rec.storage_path)
+                inaccessible.append(f"{rec.id} ({rec.filename})")
                 continue
             recordings_meta.append({
                 "recording_id": rec.id,
@@ -110,6 +133,14 @@ async def process_job(job_id: str):
                 "notes": rec.notes,
             })
 
+        if inaccessible:
+            job.state = JobState.failed
+            job.failed_recordings = len(inaccessible)
+            job.error_summary = "Audio files are inaccessible: " + ", ".join(inaccessible)
+            job.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+            return
+
         if not recordings_meta:
             job.state = JobState.failed
             job.error_summary = "No recordings with accessible files found."
@@ -120,23 +151,16 @@ async def process_job(job_id: str):
         # Output directory
         output_dir = str(settings.projects_storage / job.project_id / "outputs" / job.id)
 
-        # Progress callback
-        async def update_progress(stage: str, pct: float, current: str | None):
-            job.current_stage = stage
-            job.progress_percent = pct
-            job.current_recording_id = current
-            await db.commit()
+        # The pipeline runs in a worker thread. Progress is transferred through
+        # an asyncio queue and committed by this event-loop thread.
+        progress_queue: asyncio.Queue[tuple[str, float, str | None]] = asyncio.Queue()
+        cancellation_event = threading.Event()
+        loop = asyncio.get_running_loop()
 
         def sync_progress(stage: str, pct: float, current: str | None):
-            # The pipeline is synchronous, so we update the DB directly
-            job.current_stage = stage
-            job.progress_percent = pct
-            if current:
-                job.current_recording_id = current
+            loop.call_soon_threadsafe(progress_queue.put_nowait, (stage, pct, current))
 
         # Run the real pipeline (synchronous — runs in thread pool)
-        loop = asyncio.get_event_loop()
-
         def run_pipeline():
             return run_project_analysis(
                 project_id=job.project_id,
@@ -145,10 +169,39 @@ async def process_job(job_id: str):
                 output_directory=output_dir,
                 analysis_job_id=job.id,
                 progress_callback=sync_progress,
+                cancellation_check=cancellation_event.is_set,
             )
 
         try:
-            result = await loop.run_in_executor(None, run_pipeline)
+            pipeline_task = asyncio.create_task(asyncio.to_thread(run_pipeline))
+            started_recording_ids: set[str] = set()
+            while not pipeline_task.done():
+                try:
+                    stage, pct, current = await asyncio.wait_for(progress_queue.get(), timeout=0.25)
+                    job.current_stage = stage
+                    job.progress_percent = pct
+                    job.current_recording_id = current
+                    if current and stage.startswith("Processing recording"):
+                        if current not in started_recording_ids:
+                            started_recording_ids.add(current)
+                            job.processed_recordings = max(job.processed_recordings, len(started_recording_ids) - 1)
+                    if pct >= 50:
+                        job.processed_recordings = max(job.processed_recordings, len(started_recording_ids))
+                    await db.commit()
+                except asyncio.TimeoutError:
+                    pass
+
+                await db.refresh(job)
+                if job.state == JobState.cancelled:
+                    cancellation_event.set()
+
+            result = await pipeline_task
+            await db.refresh(job)
+            if job.state == JobState.cancelled:
+                job.completed_at = job.completed_at or datetime.now(timezone.utc)
+                job.current_stage = "Cancelled"
+                await db.commit()
+                return
 
             # Save results to database
             job.processed_recordings = result.processed_recordings
@@ -156,6 +209,15 @@ async def process_job(job_id: str):
             job.progress_percent = 100.0
 
             # Save recording analyses
+            old_analyses_result = await db.execute(
+                select(RecordingAnalysis).where(
+                    RecordingAnalysis.recording_id.in_([r.recording_id for r in result.recording_results]),
+                    RecordingAnalysis.is_active == True,
+                )
+            )
+            for old_analysis in old_analyses_result.scalars().all():
+                old_analysis.is_active = False
+
             for rec_result in result.recording_results:
                 analysis = RecordingAnalysis(
                     recording_id=rec_result.recording_id,
@@ -199,22 +261,24 @@ async def process_job(job_id: str):
                 a = analysis_result.scalar_one_or_none()
                 if a:
                     a.comparison = {
-                        "healthy_reference_similarity": rs.recovery_score,
-                        "degraded_reference_similarity": 100 - (rs.recovery_score or 0),
+                        "distance_to_healthy": rs.distance_to_healthy,
+                        "distance_to_degraded": rs.distance_to_degraded,
                         "recovery_position": rs.recovery_position,
                         "recovery_score": rs.recovery_score,
                         "projection_score": rs.projection_score,
                         "feature_agreement": rs.feature_agreement,
                     }
 
-            # Save project summary
-            if result.project_recovery_score is not None:
-                db_summary = ProjectSummary(
+            # Save a project result envelope even when reference modelling is
+            # insufficient, so the UI can explain the missing score.
+            healthy_distances = [s.distance_to_healthy for s in result.recovery_scores if s.distance_to_healthy is not None]
+            degraded_distances = [s.distance_to_degraded for s in result.recovery_scores if s.distance_to_degraded is not None]
+            db_summary = ProjectSummary(
                     project_id=job.project_id,
                     config_id=config.id,
                     recovery_score=result.project_recovery_score,
-                    healthy_similarity=result.confidence.components.get("feature_agreement"),
-                    degraded_similarity=None,
+                    median_distance_to_healthy=statistics.median(healthy_distances) if healthy_distances else None,
+                    median_distance_to_degraded=statistics.median(degraded_distances) if degraded_distances else None,
                     improvement_over_degraded=None,
                     evidence_consistency=result.confidence.evidence_consistency,
                     confidence_label=result.confidence.confidence_label,
@@ -225,13 +289,16 @@ async def process_job(job_id: str):
                     bootstrap_ci_low=result.bootstrap.ci_2_5 if result.bootstrap else None,
                     bootstrap_ci_high=result.bootstrap.ci_97_5 if result.bootstrap else None,
                     bootstrap_iterations=result.bootstrap.successful_iterations if result.bootstrap else 0,
+                    bootstrap_requested_iterations=result.bootstrap.requested_iterations if result.bootstrap else config.bootstrap_iterations,
                     included_recording_ids=result.included_recording_ids,
                     excluded_recording_ids=result.excluded_recording_ids,
                     feature_names=result.feature_names,
                     scaling_method=config.similarity_scaling_method,
                     warnings=result.warnings,
+                    reference_profiles={key: value.model_dump() for key, value in result.reference_profiles.items()},
+                    temporal_result=result.temporal or {},
                 )
-                db.add(db_summary)
+            db.add(db_summary)
 
             # Set final state
             if result.failed_recordings > 0 and result.processed_recordings > 0:
@@ -246,7 +313,20 @@ async def process_job(job_id: str):
             await db.commit()
             logger.info("Job %s completed with state %s", job_id, job.state.value)
 
+        except AnalysisCancelledError:
+            await db.refresh(job)
+            job.state = JobState.cancelled
+            job.current_stage = "Cancelled"
+            job.completed_at = job.completed_at or datetime.now(timezone.utc)
+            await db.commit()
+            logger.info("Job %s cancelled", job_id)
         except Exception as e:
+            await db.refresh(job)
+            if job.state == JobState.cancelled:
+                job.current_stage = "Cancelled"
+                job.completed_at = job.completed_at or datetime.now(timezone.utc)
+                await db.commit()
+                return
             logger.error("Pipeline execution failed for job %s: %s", job_id, e, exc_info=True)
             job.state = JobState.failed
             job.error_summary = str(e)[:500]

@@ -34,3 +34,8 @@ class InsufficientReferenceDataError(AudioAnalysisError):
 class ArtifactGenerationError(AudioAnalysisError):
     """Raised when artifact (spectrogram/waveform) generation fails."""
     pass
+
+
+class AnalysisCancelledError(AudioAnalysisError):
+    """Raised when a running analysis job is cancelled cooperatively."""
+    pass

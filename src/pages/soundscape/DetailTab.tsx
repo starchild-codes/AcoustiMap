@@ -440,7 +440,7 @@ function ImportedMetricsTable({ recording }: { recording: Recording }) {
   const comparison = recording.comparison
   const rows: { label: string; value: string | null }[] = [
     { label: 'ACI', value: features.aci != null ? features.aci.toFixed(3) : null },
-    { label: 'BI', value: features.bi != null ? features.bi.toFixed(2) : null },
+    { label: 'Biological-Band Spectral Magnitude Ratio (×10)', value: features.bi != null ? features.bi.toFixed(2) : null },
     { label: 'Biological freq. occupancy', value: features.biologicalFrequencyOccupancy != null ? features.biologicalFrequencyOccupancy.toFixed(3) : null },
     { label: 'Anthropogenic noise pressure', value: features.anthropogenicNoisePressure != null ? features.anthropogenicNoisePressure.toFixed(3) : null },
     { label: 'Spectral entropy', value: features.spectralEntropy != null ? features.spectralEntropy.toFixed(3) : null },
