@@ -2,6 +2,7 @@
 .gitignore
 node_modules
 dist
+example_data/cc0-amazon-demo/*.ogg
 **/__pycache__
 **/*.pyc
 **/.pytest_cache

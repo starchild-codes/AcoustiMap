@@ -53,7 +53,7 @@ Interactive docs: `http://localhost:8001/docs`
 | POST | /api/analysis-jobs/{job_id}/retry | Retry failed job |
 | GET | /api/recordings/{recording_id}/analyses | List analyses for recording |
 | GET | /api/projects/{project_id}/summary | Get project summary |
-| POST | /api/analyses/{analysis_id}/manual-review | Create manual quality override |
+| POST | /api/analyses/{analysis_id}/manual-review | Create audit-trailed manual quality decision (`good`, `review`, or `excluded`) |
 | GET | /api/analyses/{analysis_id}/artifacts/{name} | Download a scoped analysis artifact |
 | GET | /api/recordings/{recording_id}/audio | Stream scoped recording audio |
 

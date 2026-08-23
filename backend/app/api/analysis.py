@@ -202,13 +202,13 @@ async def create_manual_review(analysis_id: str, review: ManualReviewCreate, db:
     db_review = ManualReview(
         analysis_id=analysis_id,
         previous_status=previous,
-        new_status=review.new_status,
+        new_status=review.new_status.value,
         reason=review.reason,
         reviewer_notes=review.reviewer_notes,
     )
     # Update quality info
     quality_info = dict(analysis.quality_info)
-    quality_info["status"] = review.new_status
+    quality_info["status"] = review.new_status.value
     analysis.quality_info = quality_info
 
     db.add(db_review)

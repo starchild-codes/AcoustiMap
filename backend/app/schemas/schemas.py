@@ -292,9 +292,9 @@ class QualityFlagResponse(BaseModel):
 
 
 class ManualReviewCreate(BaseModel):
-    new_status: str
-    reason: str = ""
-    reviewer_notes: str = ""
+    new_status: QualityStatus
+    reason: str = Field(default="", max_length=2000)
+    reviewer_notes: str = Field(default="", max_length=5000)
 
 
 class ManualReviewResponse(BaseModel):

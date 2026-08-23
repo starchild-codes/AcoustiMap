@@ -87,11 +87,11 @@ worker thread alive after join: false
 
 ## Docker verification
 
-Not run: Docker is not installed in the verification environment. The Compose files remain available, but clean Docker startup is still an explicit remaining verification item.
+Not run: Docker is not installed in the verification environment. Compose was statically hardened with a migration service, readiness dependencies, API/frontend health checks, and a production Nginx frontend image; clean container startup still needs verification on a machine with Docker.
 
 ## Local run instructions
 
-Use a clean virtual environment. The current schema is created automatically for a new database.
+Use a clean virtual environment. Apply the versioned migration before starting the API or worker.
 
 Backend API terminal:
 
@@ -100,6 +100,7 @@ cd backend
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+alembic upgrade head
 python -m uvicorn app.main:app --reload --port 8001
 ```
 
@@ -131,17 +132,26 @@ Open `http://localhost:5173`.
 7. Start analysis. The job panel polls real persisted stage, percentage, processed count, failure count, and errors. Cancellation and failed-job retry are available.
 8. Open **Results** after completion to inspect the acoustic recovery score, reference distances, bootstrap bounds, temporal slope/period table, recording-level quality flags and metrics, audio, waveform/spectrogram artifacts, warnings, and limitations.
 9. Download JSON, CSV, or the reproducible ZIP from **Transparent exports**.
+10. Use **Human quality decision** on each recording result when a reviewer needs to include, retain for review, or exclude an analysis; the decision and notes are retained in the result audit trail.
 
 No screen substitutes an illustrative score when a project has no result; it shows an onboarding or insufficient-data state.
 
 ## Known limitations
 
-- There is no Alembic migration yet. Databases created by the previous schema will not gain the new configuration/job/summary columns through `create_all`; use a new database for this prototype cycle or back up and migrate existing data manually.
+- Alembic migration `20260823_01` creates a fresh schema and upgrades the previous unversioned prototype schema. Back up existing databases before upgrading; the adoption migration is intentionally irreversible.
 - The database is SQLite and the worker is single-process. This is appropriate for the local prototype, not concurrent production use.
-- Docker startup was not verified in this environment.
+- Docker startup was not verified in this environment because Docker is not installed. Compose is configured for a migration-first, health-gated launch and production static frontend serving.
 - The reproducible ZIP is improved only indirectly in this cycle and still does not contain every desired report/provenance artifact. JSON and CSV use persisted backend data.
-- There is no licensed ecological demo audio package yet. Users must supply audio they are permitted to analyze.
-- Manual quality-review edits exist in the API but are not yet exposed in the new streamlined workspace.
-- The old browser/import soundscape modules remain as unreachable compatibility code. The production Overview and Soundscape routes no longer import them; they should be removed or moved to fixtures after downstream users confirm they are not needed.
+- A reproducible CC0 Amazon source manifest is available at `example_data/cc0-amazon-demo/`; it is explicitly a technical pipeline demo, not evidence of ecological recovery.
+- Human quality-review controls are exposed in the streamlined Results workspace and persist an audit trail.
+- The legacy browser/import/mock soundscape stack has been removed.
 - Recording Explorer, Reports, Settings, and the global Methodology navigation entries remain explicit “Coming next” placeholders.
-- npm reports three dependency audit findings that need a controlled dependency upgrade.
+- `npm audit` is clean after the Vite 8 and dependency update.
+
+## Release follow-up verification (2026-08-23)
+
+- `py -3.12 -m pytest tests/test_migrations.py tests/test_analysis_worker.py -q`: **3 passed**. This exercises fresh-schema creation, upgrade from the previous unversioned column names, and worker bootstrap configuration mapping.
+- `py -3.12 -m alembic -c alembic.ini current`: **20260823_01 (head)**.
+- `npm run build`: passed with Vite 8.2.2.
+- `npm audit --json`: **0 vulnerabilities**.
+- Docker CLI was not present, so a container run could not be performed. The Compose document was parsed structurally and its migration, health-gating, frontend port, and build-argument assertions passed.

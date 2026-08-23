@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:20-slim AS build
 
 WORKDIR /app
 
@@ -6,8 +6,15 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+ARG VITE_API_BASE_URL=http://localhost:8001
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 RUN npm run build
 
-EXPOSE 5173
+FROM nginx:1.27-alpine
 
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

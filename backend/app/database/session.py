@@ -21,6 +21,8 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db():
-    """Create all tables. Called on startup."""
+    """Verify that the schema has been migrated before accepting requests."""
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        has_projects = await conn.run_sync(lambda sync_conn: sync_conn.dialect.has_table(sync_conn, "projects"))
+    if not has_projects:
+        raise RuntimeError("Database is not initialized. Run `alembic upgrade head` from backend/ first.")

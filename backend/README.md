@@ -7,6 +7,7 @@ Real Python audio-analysis pipeline for ecosystem restoration monitoring.
 ```bash
 cd backend
 pip install -r requirements.txt
+alembic upgrade head
 uvicorn app.main:app --reload --port 8001
 ```
 
@@ -46,6 +47,8 @@ backend/
 │   ├── seed.py        # Demonstration data seeding
 │   └── main.py        # FastAPI app entry point
 ├── tests/
+├── alembic/           # Versioned schema migrations
+├── alembic.ini
 └── requirements.txt
 ```
 

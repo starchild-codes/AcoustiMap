@@ -30,12 +30,11 @@
 - Negative controls (label shuffling, reference swap, noise-only)
 - Leaflet map view for sites
 - Provenance drawer in the UI
-- Manual quality-review controls in the streamlined project workspace
 - Speech detection (reviewer-assigned flag only)
 - Automated species identification
 
 ## Known issues
 
-- Existing databases require a schema migration or a new clean database; Alembic migrations are not yet provided.
-- No licensed ecological demonstration audio is bundled. The live workspace never substitutes illustrative results when backend results are absent.
-- Legacy browser/import soundscape modules remain in the source tree for compatibility but are not imported by the production Overview or Soundscape routes.
+- Existing unversioned SQLite databases must be backed up and upgraded with `alembic upgrade head`. The initial adoption migration is intentionally irreversible; restore a backup to roll back.
+- The CC0 Amazon source manifest is a technical pipeline demonstration only. Its synthetic degraded references and repeated source observations are not ecological recovery evidence.
+- Docker is configured for production static frontend serving and schema-first startup, but container runtime verification requires Docker to be installed on the deployment machine.

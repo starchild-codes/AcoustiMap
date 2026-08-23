@@ -31,6 +31,7 @@ docker compose up --build
 ```bash
 cd backend
 pip install -r requirements.txt
+alembic upgrade head
 uvicorn app.main:app --reload --port 8001
 ```
 
@@ -69,6 +70,8 @@ npm run dev
 - API-backed React project setup, job progress, results, quality flags, artifacts, and exports
 - Export project JSON, recording CSV, and reproducible analysis bundle (ZIP)
 - Docker Compose for one-command setup
+- Alembic migration workflow for fresh and prior unversioned SQLite databases
+- Human quality decisions in live results, with a persisted audit trail
 
 ## What is prototype-only
 
@@ -100,3 +103,4 @@ npm run dev
 - [API reference](docs/api.md)
 - [Reproducibility](docs/reproducibility.md)
 - [Limitations](docs/limitations.md)
+- [CC0 technical demo source](example_data/cc0-amazon-demo/README.md)
